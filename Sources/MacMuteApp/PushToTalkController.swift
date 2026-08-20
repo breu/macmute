@@ -35,7 +35,7 @@ final class PushToTalkController {
     private(set) var mode: HotkeyMode
     var onModeChanged: ((HotkeyMode) -> Void)?
 
-    private let holdThreshold: TimeInterval = 0.3
+    private let holdThreshold: TimeInterval = 0.1
     /// Keyboard taps run slower than mouse clicks, so floor the system's double-click
     /// speed setting rather than using it as-is — respects a user who's set it slower,
     /// but doesn't inherit an unreasonably tight value from a fast mouse-click setting.
@@ -73,6 +73,7 @@ final class PushToTalkController {
         if isHoldActive {
             isHoldActive = false
             if let prior = micStateBeforeHold {
+                ClickSoundPlayer.shared.play()
                 MicMuteController.shared.setMuted(prior)
             }
             micStateBeforeHold = nil
@@ -117,6 +118,7 @@ final class PushToTalkController {
     }
 
     private func applyModeAction() {
+        ClickSoundPlayer.shared.play()
         MicMuteController.shared.setMuted(mode.targetMutedState)
     }
 
@@ -129,6 +131,7 @@ final class PushToTalkController {
     }
 
     private func toggleMode() {
+        ClickSoundPlayer.shared.playModeChange()
         setMode(mode == .pushToMute ? .pushToUnmute : .pushToMute)
     }
 
