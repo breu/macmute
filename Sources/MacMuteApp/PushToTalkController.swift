@@ -35,7 +35,7 @@ final class PushToTalkController {
     private(set) var mode: HotkeyMode
     var onModeChanged: ((HotkeyMode) -> Void)?
 
-    private let holdThreshold: TimeInterval = 0.1
+    private let holdThreshold: TimeInterval = 0.2
     /// Keyboard taps run slower than mouse clicks, so floor the system's double-click
     /// speed setting rather than using it as-is — respects a user who's set it slower,
     /// but doesn't inherit an unreasonably tight value from a fast mouse-click setting.
@@ -54,6 +54,30 @@ final class PushToTalkController {
         MicMuteController.shared.setMuted(mode.restingMutedState)
         HotkeyManager.shared.onHotkeyDown = { [weak self] in self?.handleDown() }
         HotkeyManager.shared.onHotkeyUp = { [weak self] in self?.handleUp() }
+        observeWake()
+    }
+
+    /// Sleep can strand this state machine mid-gesture (e.g. a tap pending its
+    /// double-tap window, or a hold whose release never arrived), so it's reset
+    /// to a clean slate on wake rather than trusting leftover timers/counters.
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.resetGestureState()
+        }
+    }
+
+    private func resetGestureState() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+        pendingTapTimer?.invalidate()
+        pendingTapTimer = nil
+        tapCount = 0
+        isHoldActive = false
+        micStateBeforeHold = nil
     }
 
     private func handleDown() {

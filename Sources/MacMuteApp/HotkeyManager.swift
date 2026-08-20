@@ -68,6 +68,23 @@ final class HotkeyManager {
         currentShortcut = Self.loadShortcut() ?? .default
         installHandler()
         register(shortcut: currentShortcut)
+        observeWake()
+    }
+
+    /// The global NSEvent monitor backing the standalone fn key can silently stop
+    /// delivering events after the system sleeps, so it's torn down and reinstalled
+    /// on wake. Carbon's RegisterEventHotKey path isn't affected by sleep, so
+    /// non-fn shortcuts are left alone.
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.currentShortcut.isFn else { return }
+            self.unregisterFnMonitor()
+            self.registerFnMonitor()
+        }
     }
 
     func updateShortcut(_ shortcut: KeyboardShortcut) {
