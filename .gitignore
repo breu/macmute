@@ -1,0 +1,20 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode (in case a project/workspace ever gets generated)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# Build output of Scripts/build_app.sh and Scripts/build_dmg.sh
+/MacMute.app
+/MacMute-*.dmg
+/.dmg_staging
+
+# macOS
+.DS_Store
+
+# Claude Code local settings (machine-specific permissions)
+.claude/settings.local.json
