@@ -1,3 +1,4 @@
+import AppKit
 import CoreAudio
 import Foundation
 
@@ -15,6 +16,23 @@ final class MicMuteController {
     private init() {
         currentDeviceID = Self.defaultInputDeviceID()
         observeDefaultDeviceChanges()
+        observeWake()
+    }
+
+    /// CoreAudio can silently reset a device's hardware mute property during its
+    /// own post-sleep reinitialization, leaving the actual mic state out of sync
+    /// with what this controller (and the menu bar icon) believes. Re-applying the
+    /// last-known `isMuted` value forces the hardware back in line without
+    /// overriding whatever the user's actual last intent was.
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.setMuted(self.isMuted)
+        }
     }
 
     func toggle() {

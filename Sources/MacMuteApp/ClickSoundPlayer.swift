@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 
 /// Plays a short synthesized "click" as feedback for hotkey-driven mic actions.
@@ -7,8 +8,9 @@ final class ClickSoundPlayer {
 
     static let shared = ClickSoundPlayer()
 
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
+    private var engine = AVAudioEngine()
+    private var player = AVAudioPlayerNode()
+    private var configChangeObserver: NSObjectProtocol?
     private let format: AVAudioFormat
     private let clickBuffer: AVAudioPCMBuffer
     private let modeChangeBuffer: AVAudioPCMBuffer
@@ -19,13 +21,66 @@ final class ClickSoundPlayer {
         clickBuffer = Self.makeClickBuffer(format: format, sampleRate: sampleRate)
         modeChangeBuffer = Self.makeModeChangeBuffer(format: format, sampleRate: sampleRate)
 
+        buildGraph()
+        observeWake()
+    }
+
+    private func buildGraph() {
         engine.mainMixerNode.outputVolume = 1.0
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
+        startEngine()
+        observeConfigurationChange()
+    }
+
+    /// Recreating the engine and player from scratch — rather than reusing and
+    /// restarting the existing objects — is what actually recovers audio after
+    /// sleep: a plain stop()/start() on the same instance kept leaving `isRunning`
+    /// reporting true with no audio actually reaching the hardware.
+    private func rebuildGraph() {
+        engine.stop()
+        if let configChangeObserver {
+            NotificationCenter.default.removeObserver(configChangeObserver)
+        }
+        engine = AVAudioEngine()
+        player = AVAudioPlayerNode()
+        buildGraph()
+    }
+
+    private func startEngine() {
         do {
             try engine.start()
         } catch {
             NSLog("ClickSoundPlayer: engine.start() failed: \(error)")
+        }
+    }
+
+    /// A short delay before rebuilding gives CoreAudio a moment to finish its own
+    /// hardware reinitialization after wake — rebuilding immediately at the
+    /// notification can race with that and still end up silently non-functional.
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.rebuildGraph()
+            }
+        }
+    }
+
+    /// Apple posts this specifically when the engine's hardware configuration changes
+    /// (sample rate, device, channel count) — the engine stops itself but does not
+    /// restart automatically. This is the documented signal for the exact class of
+    /// bug where sleep/wake silently kills audio output.
+    private func observeConfigurationChange() {
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            self?.startEngine()
         }
     }
 
@@ -42,12 +97,8 @@ final class ClickSoundPlayer {
 
     private func play(_ buffer: AVAudioPCMBuffer) {
         if !engine.isRunning {
-            do {
-                try engine.start()
-            } catch {
-                NSLog("ClickSoundPlayer: engine restart failed: \(error)")
-                return
-            }
+            startEngine()
+            guard engine.isRunning else { return }
         }
         player.scheduleBuffer(buffer, at: nil, options: .interrupts)
         player.play()
