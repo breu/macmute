@@ -47,6 +47,37 @@ The app has no Dock icon or main window — look for the mic icon in the menu ba
 - **Preferences…**: change the global hotkey or enable Launch at Login
 - **About**: version and credits
 
+## App Signing
+
+Rebuilding the app requires new accessibility permissions as it is assigned to the build ID. The easiest way to solve this is to create a static signing cert.
+
+**1. Generate the certificate:**
+
+```sh
+openssl req -x509 -newkey rsa:2048 -days 3650 \
+  -keyout dev.key -out dev.crt -nodes \
+  -subj "/CN=macmute dev" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=codeSigning"
+```
+
+**2. Convert to p12 format** (compatible with macOS):
+
+```sh
+openssl pkcs12 -export -legacy \
+  -in dev.crt -inkey dev.key \
+  -out dev.p12 -password pass:dev
+```
+
+**3. Import to keychain:**
+
+```sh
+security import dev.p12 -k ~/Library/Keychains/login.keychain-db \
+  -P dev -T /usr/bin/codesign
+```
+
+**4. Trust the certificate:** open Keychain Access, find the "macmute dev" certificate, and set it to "Always Trust" for code signing.
+
 ## Notes
 
 - On first launch, macOS may prompt for microphone-related permission when CoreAudio enumerates input devices. Granting it is safe — MacMute never opens an audio input stream.

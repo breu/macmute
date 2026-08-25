@@ -22,7 +22,7 @@ cp Resources/Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 cp Resources/RaptorIcon.png "${APP_BUNDLE}/Contents/Resources/RaptorIcon.png"
 
 echo "==> Ad-hoc code signing"
-codesign --force --deep --sign - "${APP_BUNDLE}"
+codesign --force --deep --sign "macmute dev" "${APP_BUNDLE}"
 
 echo "==> Done: ${APP_BUNDLE}"
 echo "Run with: open ${APP_BUNDLE}"
