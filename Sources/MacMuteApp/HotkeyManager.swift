@@ -17,6 +17,13 @@ struct KeyboardShortcut: Equatable {
 
     var isFn: Bool { keyCode == UInt32(kVK_Function) }
 
+    /// F13–F20 have no default system binding and aren't used for typing, so unlike
+    /// ordinary letter/number keys they're safe to bind standalone (no modifier required).
+    static let standaloneFunctionKeyCodes: Set<UInt32> = [
+        UInt32(kVK_F13), UInt32(kVK_F14), UInt32(kVK_F15), UInt32(kVK_F16),
+        UInt32(kVK_F17), UInt32(kVK_F18), UInt32(kVK_F19), UInt32(kVK_F20)
+    ]
+
     var displayString: String {
         if isFn { return "fn" }
         var parts = ""
@@ -39,7 +46,10 @@ struct KeyboardShortcut: Equatable {
             UInt32(kVK_ANSI_S): "S", UInt32(kVK_ANSI_T): "T", UInt32(kVK_ANSI_U): "U",
             UInt32(kVK_ANSI_V): "V", UInt32(kVK_ANSI_W): "W", UInt32(kVK_ANSI_X): "X",
             UInt32(kVK_ANSI_Y): "Y", UInt32(kVK_ANSI_Z): "Z",
-            UInt32(kVK_Space): "Space"
+            UInt32(kVK_Space): "Space",
+            UInt32(kVK_F13): "F13", UInt32(kVK_F14): "F14", UInt32(kVK_F15): "F15",
+            UInt32(kVK_F16): "F16", UInt32(kVK_F17): "F17", UInt32(kVK_F18): "F18",
+            UInt32(kVK_F19): "F19", UInt32(kVK_F20): "F20"
         ]
         return map[keyCode] ?? "Key\(keyCode)"
     }

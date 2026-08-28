@@ -94,9 +94,12 @@ private final class ShortcutRecorder {
             if event.modifierFlags.contains(.control) { carbonModifiers |= UInt32(controlKey) }
             if event.modifierFlags.contains(.shift) { carbonModifiers |= UInt32(shiftKey) }
 
-            guard carbonModifiers != 0 else { return event }
+            let keyCode = UInt32(event.keyCode)
+            guard carbonModifiers != 0 || KeyboardShortcut.standaloneFunctionKeyCodes.contains(keyCode) else {
+                return event
+            }
 
-            let shortcut = KeyboardShortcut(keyCode: UInt32(event.keyCode), modifiers: carbonModifiers)
+            let shortcut = KeyboardShortcut(keyCode: keyCode, modifiers: carbonModifiers)
             self?.finish(with: shortcut, completion: completion)
             return nil
         }
