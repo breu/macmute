@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
+@MainActor
 final class PreferencesWindowController: NSWindowController {
 
     convenience init() {
@@ -10,7 +11,7 @@ final class PreferencesWindowController: NSWindowController {
         let window = NSWindow(contentViewController: hostingController)
         window.title = "MacMute Preferences"
         window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 320, height: 190))
+        window.setContentSize(NSSize(width: 360, height: 240))
         self.init(window: window)
     }
 
@@ -21,10 +22,12 @@ final class PreferencesWindowController: NSWindowController {
     }
 }
 
+@MainActor
 private struct PreferencesView: View {
     @State private var shortcutDisplay = HotkeyManager.shared.currentShortcut.displayString
     @State private var isRecording = false
     @State private var launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
+    @State private var errorMessage: String?
 
     @State private var recorder = ShortcutRecorder()
 
@@ -58,36 +61,80 @@ private struct PreferencesView: View {
 
             Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
                 .onChange(of: launchAtLoginEnabled) { newValue in
-                    LaunchAtLoginManager.shared.setEnabled(newValue)
+                    switch LaunchAtLoginManager.shared.setEnabled(newValue) {
+                    case .success(let actual):
+                        errorMessage = nil
+                        launchAtLoginEnabled = actual
+                    case .failure(let error):
+                        errorMessage = error.localizedDescription
+                        launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
+                    }
                 }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Spacer()
         }
         .padding(20)
-        .frame(width: 320, height: 190)
+        .frame(width: 360, height: 240)
+        .onDisappear {
+            recorder.cancel()
+            isRecording = false
+        }
+        .onAppear {
+            if let error = HotkeyManager.shared.lastRegistrationError {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func startRecording() {
         isRecording = true
-        recorder.record { shortcut in
-            HotkeyManager.shared.updateShortcut(shortcut)
-            shortcutDisplay = shortcut.displayString
-            isRecording = false
-        }
+        errorMessage = nil
+        recorder.record(
+            completion: { shortcut in
+                switch HotkeyManager.shared.updateShortcut(shortcut) {
+                case .success:
+                    shortcutDisplay = shortcut.displayString
+                    errorMessage = nil
+                case .failure(let error):
+                    errorMessage = error.localizedDescription
+                }
+                isRecording = false
+            },
+            onCancel: {
+                isRecording = false
+            }
+        )
     }
 }
 
 /// Captures the next keyDown + modifier combination (or a standalone fn press)
 /// within the app and converts it into a `KeyboardShortcut`.
-private final class ShortcutRecorder {
+@MainActor
+final class ShortcutRecorder {
     private var keyMonitor: Any?
     private var flagsMonitor: Any?
     private var fnKeyIsDown = false
 
-    func record(completion: @escaping (KeyboardShortcut) -> Void) {
+    func record(
+        completion: @escaping (KeyboardShortcut) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        cancel()
         fnKeyIsDown = false
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                self?.cancel()
+                onCancel()
+                return nil
+            }
             var carbonModifiers: UInt32 = 0
             if event.modifierFlags.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
             if event.modifierFlags.contains(.option) { carbonModifiers |= UInt32(optionKey) }
@@ -115,11 +162,16 @@ private final class ShortcutRecorder {
         }
     }
 
-    private func finish(with shortcut: KeyboardShortcut, completion: @escaping (KeyboardShortcut) -> Void) {
-        completion(shortcut)
+    func cancel() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
         keyMonitor = nil
         flagsMonitor = nil
+        fnKeyIsDown = false
+    }
+
+    private func finish(with shortcut: KeyboardShortcut, completion: @escaping (KeyboardShortcut) -> Void) {
+        cancel()
+        completion(shortcut)
     }
 }

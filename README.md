@@ -5,6 +5,7 @@ A lightweight menu bar utility that mutes your Mac's system microphone. It mutes
 ## Features
 
 - Menu bar icon (🎙 / 🔇) reflecting mute state
+- Explicit unavailable-state icon when CoreAudio cannot verify the microphone state
 - Global hotkey (default: ⌥⌘M, or bind the standalone `fn` key), configurable in Preferences, with three interactions:
   - **Tap**: performs the current mode's action and leaves it
   - **Hold**: performs the action while held, reverts to the prior state on release
@@ -12,10 +13,11 @@ A lightweight menu bar utility that mutes your Mac's system microphone. It mutes
 - Mode can also be set directly from the menu bar dropdown
 - Launch at Login (in Preferences)
 - Tracks the default input device — if you switch microphones while muted, the new device is muted too
+- Preserves the microphone's existing state when MacMute launches
 
 ## How it works
 
-MacMute never records or transmits audio. It only flips the input device's `Mute` property (or, on devices without a hardware mute switch, zeroes the input volume and restores it on unmute) via CoreAudio's `AudioObjectSetPropertyData`.
+MacMute never records or transmits audio. It only flips the input device's writable `Mute` property (or, on devices without one, zeroes the writable master input volume and restores the verified per-device baseline) through CoreAudio. Every requested state change is read back before the menu bar reports success.
 
 ## Build (no Xcode required)
 
@@ -25,7 +27,13 @@ Requires Xcode Command Line Tools (`xcode-select --install`) and macOS 13+.
 ./Scripts/build_app.sh
 ```
 
-This runs `swift build -c release`, assembles `MacMute.app`, and ad-hoc code-signs it.
+This runs `swift build -c release`, assembles `MacMute.app`, ad-hoc signs it for local development, and verifies the resulting bundle. It does not modify the microphone merely by building or launching the app.
+
+Run the regression suite with:
+
+```sh
+swift test
+```
 
 ## Install
 
@@ -47,40 +55,24 @@ The app has no Dock icon or main window — look for the mic icon in the menu ba
 - **Preferences…**: change the global hotkey or enable Launch at Login
 - **About**: version and credits
 
-## App Signing
+## BreuSoftware LLC Release Signing
 
-Rebuilding the app requires new accessibility permissions as it is assigned to the build ID. The easiest way to solve this is to create a static signing cert.
+Local builds intentionally use ad-hoc signing. Public releases must use BreuSoftware LLC's Apple-issued **Developer ID Application** certificate plus Apple's notarization service. The release scripts refuse to create a release DMG with an ad-hoc, self-signed, or differently named identity.
 
-**1. Generate the certificate:**
-
-```sh
-openssl req -x509 -newkey rsa:2048 -days 3650 \
-  -keyout dev.key -out dev.crt -nodes \
-  -subj "/CN=macmute dev" \
-  -addext "keyUsage=critical,digitalSignature" \
-  -addext "extendedKeyUsage=codeSigning"
-```
-
-**2. Convert to p12 format** (compatible with macOS):
+First save App Store Connect notarization credentials in Keychain using `xcrun notarytool store-credentials`. Then supply the exact Keychain identity and saved profile:
 
 ```sh
-openssl pkcs12 -export -legacy \
-  -in dev.crt -inkey dev.key \
-  -out dev.p12 -password pass:dev
+export MACMUTE_RELEASE=1
+export MACMUTE_SIGNING_IDENTITY='Developer ID Application: BreuSoftware LLC (TEAMID)'
+export MACMUTE_NOTARY_PROFILE='breusoftware-notary'
+./Scripts/build_dmg.sh
 ```
 
-**3. Import to keychain:**
-
-```sh
-security import dev.p12 -k ~/Library/Keychains/login.keychain-db \
-  -P dev -T /usr/bin/codesign
-```
-
-**4. Trust the certificate:** open Keychain Access, find the "macmute dev" certificate, and set it to "Always Trust" for code signing.
+Replace `TEAMID` and the profile name with BreuSoftware LLC's actual values. Release mode applies the hardened runtime and secure timestamp, signs the app and DMG, submits the DMG to Apple, staples the notarization ticket, and verifies both the signature and Gatekeeper assessment. Never create or globally trust a self-signed certificate for a public release.
 
 ## Notes
 
-- On first launch, macOS may prompt for microphone-related permission when CoreAudio enumerates input devices. Granting it is safe — MacMute never opens an audio input stream.
+- On first launch, macOS may prompt for microphone-related permission when CoreAudio enumerates input devices. MacMute never opens an audio input stream.
 - To change the hotkey: open Preferences, click the shortcut button, then press your desired key combination (must include a modifier, or press `fn` alone).
 - Binding `fn` requires granting MacMute Accessibility permission (System Settings → Privacy & Security → Accessibility) — macOS will prompt for this the first time.
 - If your menu bar already has other mic/audio-related icons (system input indicator, call-app mute buttons, etc.), MacMute's plain mic icon can be easy to miss at a glance — check for it near other third-party menu bar icons, not just the system clock cluster.

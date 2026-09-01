@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusBarController: StatusBarController?
@@ -10,5 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController = StatusBarController()
 
         _ = PushToTalkController.shared
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        PushToTalkController.shared.prepareForTermination()
     }
 }

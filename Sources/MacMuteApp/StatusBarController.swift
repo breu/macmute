@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 final class StatusBarController {
 
     private let statusItem: NSStatusItem
@@ -9,21 +10,23 @@ final class StatusBarController {
     private var pushToMuteItem: NSMenuItem?
     private var pushToUnmuteItem: NSMenuItem?
     private var statusMenu: NSMenu?
+    private var microphoneStateItem: NSMenuItem?
 
     private let unmutedSymbol = "mic.fill"
     private let mutedSymbol = "mic.slash.fill"
+    private let unavailableSymbol = "exclamationmark.triangle.fill"
 
     init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         configureButton()
         configureMenu()
-        muteController.onMuteStateChanged = { [weak self] muted in
-            self?.updateIcon(muted: muted)
+        muteController.onStateChanged = { [weak self] state in
+            self?.updateMicrophoneState(state)
         }
         pushToTalk.onModeChanged = { [weak self] _ in
             self?.updateModeMenuItemStates()
         }
-        updateIcon(muted: muteController.isMuted)
+        updateMicrophoneState(muteController.state)
     }
 
     private func configureButton() {
@@ -33,6 +36,13 @@ final class StatusBarController {
 
     private func configureMenu() {
         let menu = NSMenu()
+
+        let microphoneStateItem = NSMenuItem(title: "Microphone State: Checking…", action: nil, keyEquivalent: "")
+        microphoneStateItem.isEnabled = false
+        menu.addItem(microphoneStateItem)
+        self.microphoneStateItem = microphoneStateItem
+
+        menu.addItem(NSMenuItem.separator())
 
         let modeHeader = NSMenuItem(title: "Hotkey Mode", action: nil, keyEquivalent: "")
         modeHeader.isEnabled = false
@@ -103,10 +113,12 @@ final class StatusBarController {
     }
 
     @objc private func showAbout() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "Development"
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "MacMute",
-            .applicationVersion: "1.3",
+            .applicationVersion: version,
             .credits: NSAttributedString(string: "Mutes your Mac's system microphone system-wide, at the hardware level.\n\nWritten by Joe Breu.")
         ])
     }
@@ -115,10 +127,28 @@ final class StatusBarController {
         NSApp.terminate(nil)
     }
 
-    private func updateIcon(muted: Bool) {
+    private func updateMicrophoneState(_ state: MicrophoneState) {
+        let symbol: String
+        let description: String
+        let menuTitle: String
+        switch state {
+        case .muted:
+            symbol = mutedSymbol
+            description = "Microphone muted"
+            menuTitle = "Microphone State: Muted"
+        case .unmuted:
+            symbol = unmutedSymbol
+            description = "Microphone unmuted"
+            menuTitle = "Microphone State: Unmuted"
+        case .unavailable:
+            symbol = unavailableSymbol
+            description = "Microphone state unavailable"
+            menuTitle = "Microphone State: Unavailable"
+        }
         statusItem.button?.image = NSImage(
-            systemSymbolName: muted ? mutedSymbol : unmutedSymbol,
-            accessibilityDescription: muted ? "Microphone muted" : "Microphone unmuted"
+            systemSymbolName: symbol,
+            accessibilityDescription: description
         )
+        microphoneStateItem?.title = menuTitle
     }
 }

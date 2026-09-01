@@ -4,6 +4,7 @@ import AVFoundation
 /// Plays a short synthesized "click" as feedback for hotkey-driven mic actions.
 /// Generated in-process rather than bundled as an audio asset, so there's nothing
 /// to ship or codesign alongside the binary.
+@MainActor
 final class ClickSoundPlayer {
 
     static let shared = ClickSoundPlayer()
@@ -63,9 +64,11 @@ final class ClickSoundPlayer {
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.rebuildGraph()
+        ) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task { @MainActor in
+                    ClickSoundPlayer.shared.rebuildGraph()
+                }
             }
         }
     }
@@ -79,8 +82,10 @@ final class ClickSoundPlayer {
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: .main
-        ) { [weak self] _ in
-            self?.startEngine()
+        ) { _ in
+            Task { @MainActor in
+                ClickSoundPlayer.shared.startEngine()
+            }
         }
     }
 
