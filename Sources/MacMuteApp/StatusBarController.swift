@@ -9,6 +9,11 @@ final class StatusBarController {
         let menuTitle: String
     }
 
+    struct ModePresentation: Equatable {
+        let symbol: String
+        let accessibilityDescription: String
+    }
+
     private let statusItem: NSStatusItem
     private let muteController = MicMuteController.shared
     private let pushToTalk = PushToTalkController.shared
@@ -18,6 +23,7 @@ final class StatusBarController {
     private var statusMenu: NSMenu?
     private var microphoneStateItem: NSMenuItem?
     private var hotkeyStateItem: NSMenuItem?
+    private var modeIndicatorTimer: Timer?
 
     private let unmutedSymbol = "mic.fill"
     private let mutedSymbol = "mic.slash.fill"
@@ -30,8 +36,9 @@ final class StatusBarController {
         muteController.onStateChanged = { [weak self] state in
             self?.updateMicrophoneState(state)
         }
-        pushToTalk.onModeChanged = { [weak self] _ in
+        pushToTalk.onModeChanged = { [weak self] mode in
             self?.updateModeMenuItemStates()
+            self?.showModeChange(mode)
         }
         NotificationCenter.default.addObserver(
             forName: .macMuteHotkeyRegistrationDidChange,
@@ -127,6 +134,25 @@ final class StatusBarController {
         pushToUnmuteItem?.state = pushToTalk.mode == .pushToUnmute ? .on : .off
     }
 
+    private func showModeChange(_ mode: HotkeyMode) {
+        modeIndicatorTimer?.invalidate()
+        let presentation = Self.modePresentation(for: mode)
+        statusItem.button?.image = NSImage(
+            systemSymbolName: presentation.symbol,
+            accessibilityDescription: presentation.accessibilityDescription
+        )
+
+        let timer = Timer(timeInterval: 1.25, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.modeIndicatorTimer = nil
+                self.updateMicrophoneState(self.muteController.state)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        modeIndicatorTimer = timer
+    }
+
     @objc private func openPreferences() {
         if preferencesWindowController == nil {
             preferencesWindowController = PreferencesWindowController()
@@ -151,11 +177,28 @@ final class StatusBarController {
 
     private func updateMicrophoneState(_ state: MicrophoneState) {
         let presentation = Self.presentation(for: state)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: presentation.symbol,
-            accessibilityDescription: presentation.accessibilityDescription
-        )
+        if modeIndicatorTimer == nil {
+            statusItem.button?.image = NSImage(
+                systemSymbolName: presentation.symbol,
+                accessibilityDescription: presentation.accessibilityDescription
+            )
+        }
         microphoneStateItem?.title = presentation.menuTitle
+    }
+
+    static func modePresentation(for mode: HotkeyMode) -> ModePresentation {
+        switch mode {
+        case .pushToMute:
+            ModePresentation(
+                symbol: "mic.slash.circle.fill",
+                accessibilityDescription: "Hotkey mode changed to Push to Mute"
+            )
+        case .pushToUnmute:
+            ModePresentation(
+                symbol: "mic.circle.fill",
+                accessibilityDescription: "Hotkey mode changed to Push to Unmute"
+            )
+        }
     }
 
     static func presentation(for state: MicrophoneState) -> MicrophonePresentation {

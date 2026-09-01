@@ -9,7 +9,7 @@ A lightweight menu bar utility that mutes your Mac's current default input devic
 - Global hotkey (default: ⌥⌘M, or bind the standalone `fn` key), configurable in Preferences, with three interactions:
   - **Tap**: performs the current mode's action and leaves it
   - **Hold**: performs the action while held, reverts to the prior state on release
-  - **Double-click**: switches between "Push to Mute" and "Push to Unmute" mode
+  - **Double-click**: switches between "Push to Mute" and "Push to Unmute" mode and briefly shows the selected mode in the menu bar icon
 - Mode can also be set directly from the menu bar dropdown
 - Launch at Login (in Preferences)
 - Tracks the default input device — if you switch microphones while muted, the new device is muted too

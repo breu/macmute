@@ -961,6 +961,8 @@ final class MicMuteControllerTests: XCTestCase {
             initialMode: .pushToMute,
             doubleClickWindow: 1
         )
+        var reportedMode: HotkeyMode?
+        gesture.onModeChanged = { reportedMode = $0 }
 
         gesture.handleDown()
         gesture.handleUp()
@@ -968,6 +970,7 @@ final class MicMuteControllerTests: XCTestCase {
         gesture.handleUp()
 
         XCTAssertEqual(gesture.mode, .pushToUnmute)
+        XCTAssertEqual(reportedMode, .pushToUnmute)
         XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [true])
     }
 
@@ -1126,6 +1129,18 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertTrue(
             StatusBarController.hotkeyTitle(error: .monitorUnavailable, isActive: false)
                 .contains("fn-key monitor")
+        )
+        XCTAssertEqual(
+            StatusBarController.modePresentation(for: .pushToMute).symbol,
+            "mic.slash.circle.fill"
+        )
+        XCTAssertEqual(
+            StatusBarController.modePresentation(for: .pushToUnmute).symbol,
+            "mic.circle.fill"
+        )
+        XCTAssertNotEqual(
+            StatusBarController.modePresentation(for: .pushToMute),
+            StatusBarController.modePresentation(for: .pushToUnmute)
         )
     }
 
