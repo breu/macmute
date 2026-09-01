@@ -97,6 +97,7 @@ final class PushToTalkController {
         pendingTapTimer = nil
         tapCount = 0
 
+        micController.refreshState()
         guard let prior = micController.state.mutedValue else {
             holdAttemptFailed = true
             return
@@ -131,16 +132,21 @@ final class PushToTalkController {
         clearGestureState()
     }
 
-    func setMode(_ newMode: HotkeyMode) {
-        guard newMode != mode else { return }
+    @discardableResult
+    func setMode(_ newMode: HotkeyMode) -> Bool {
+        guard newMode != mode else { return true }
         if isHoldActive {
-            restoreActiveHold()
+            guard restoreActiveHold() else {
+                clearGestureState()
+                return false
+            }
         }
         clearGestureState()
+        guard micController.setMuted(newMode.restingMutedState) else { return false }
         mode = newMode
         Self.saveMode(mode)
-        _ = micController.setMuted(mode.restingMutedState)
         onModeChanged?(mode)
+        return true
     }
 
     private func registerTap() {
@@ -179,15 +185,16 @@ final class PushToTalkController {
         return succeeded
     }
 
-    private func restoreActiveHold() {
+    @discardableResult
+    private func restoreActiveHold() -> Bool {
         isHoldActive = false
-        if let prior = micStateBeforeHold {
-            let succeeded = micController.setMuted(prior)
-            if succeeded, playsFeedback {
-                ClickSoundPlayer.shared.play()
-            }
+        guard let prior = micStateBeforeHold else { return true }
+        let succeeded = micController.setMuted(prior, retryOnFailure: true)
+        if succeeded, playsFeedback {
+            ClickSoundPlayer.shared.play()
         }
         micStateBeforeHold = nil
+        return succeeded
     }
 
     private func clearGestureState() {
@@ -202,10 +209,10 @@ final class PushToTalkController {
     }
 
     private func toggleMode() {
-        if playsFeedback {
+        let changed = setMode(mode == .pushToMute ? .pushToUnmute : .pushToMute)
+        if changed, playsFeedback {
             ClickSoundPlayer.shared.playModeChange()
         }
-        setMode(mode == .pushToMute ? .pushToUnmute : .pushToMute)
     }
 
     private func observeWake() {
@@ -213,9 +220,9 @@ final class PushToTalkController {
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
-        ) { _ in
-            Task { @MainActor in
-                PushToTalkController.shared.handleWake()
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleWake()
             }
         }
     }

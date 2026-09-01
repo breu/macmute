@@ -64,11 +64,12 @@ First save App Store Connect notarization credentials in Keychain using `xcrun n
 ```sh
 export MACMUTE_RELEASE=1
 export MACMUTE_SIGNING_IDENTITY='Developer ID Application: BreuSoftware LLC (TEAMID)'
+export MACMUTE_TEAM_ID='TEAMID1234'
 export MACMUTE_NOTARY_PROFILE='breusoftware-notary'
 ./Scripts/build_dmg.sh
 ```
 
-Replace `TEAMID` and the profile name with BreuSoftware LLC's actual values. Release mode applies the hardened runtime and secure timestamp, signs the app and DMG, submits the DMG to Apple, staples the notarization ticket, and verifies both the signature and Gatekeeper assessment. Never create or globally trust a self-signed certificate for a public release.
+Replace the example identity, 10-character team ID, and profile name with BreuSoftware LLC's actual values. Release mode runs the strict test suite, applies the hardened runtime and secure timestamp, verifies the signed app's exact TeamIdentifier and Apple trust assessment, signs the DMG, submits it to Apple, staples the notarization ticket, and only then publishes the app and DMG together. Never create or globally trust a self-signed certificate for a public release.
 
 ## Notes
 

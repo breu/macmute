@@ -11,6 +11,7 @@ final class StatusBarController {
     private var pushToUnmuteItem: NSMenuItem?
     private var statusMenu: NSMenu?
     private var microphoneStateItem: NSMenuItem?
+    private var hotkeyStateItem: NSMenuItem?
 
     private let unmutedSymbol = "mic.fill"
     private let mutedSymbol = "mic.slash.fill"
@@ -26,7 +27,17 @@ final class StatusBarController {
         pushToTalk.onModeChanged = { [weak self] _ in
             self?.updateModeMenuItemStates()
         }
+        NotificationCenter.default.addObserver(
+            forName: .macMuteHotkeyRegistrationDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateHotkeyState()
+            }
+        }
         updateMicrophoneState(muteController.state)
+        updateHotkeyState()
     }
 
     private func configureButton() {
@@ -41,6 +52,11 @@ final class StatusBarController {
         microphoneStateItem.isEnabled = false
         menu.addItem(microphoneStateItem)
         self.microphoneStateItem = microphoneStateItem
+
+        let hotkeyStateItem = NSMenuItem(title: "Hotkey: Active", action: nil, keyEquivalent: "")
+        hotkeyStateItem.isEnabled = false
+        menu.addItem(hotkeyStateItem)
+        self.hotkeyStateItem = hotkeyStateItem
 
         menu.addItem(NSMenuItem.separator())
 
@@ -150,5 +166,13 @@ final class StatusBarController {
             accessibilityDescription: description
         )
         microphoneStateItem?.title = menuTitle
+    }
+
+    private func updateHotkeyState() {
+        if let error = HotkeyManager.shared.lastRegistrationError {
+            hotkeyStateItem?.title = "Hotkey: \(error.localizedDescription)"
+        } else {
+            hotkeyStateItem?.title = "Hotkey: Active"
+        }
     }
 }

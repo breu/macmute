@@ -6,9 +6,10 @@ cd "$(dirname "$0")/.."
 APP_NAME="MacMute"
 EXECUTABLE_NAME="MacMuteApp"
 BUILD_DIR=".build/release"
-APP_BUNDLE="${APP_NAME}.app"
+APP_BUNDLE="${MACMUTE_APP_OUTPUT:-${APP_NAME}.app}"
 RELEASE_BUILD="${MACMUTE_RELEASE:-0}"
 SIGNING_IDENTITY="${MACMUTE_SIGNING_IDENTITY:--}"
+EXPECTED_TEAM_ID="${MACMUTE_TEAM_ID:-}"
 WORK_DIR=""
 TEMP_APP_BUNDLE=""
 BACKUP_APP_BUNDLE=""
@@ -24,7 +25,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ "${RELEASE_BUILD}" != "0" && "${RELEASE_BUILD}" != "1" ]]; then
+    echo "error: MACMUTE_RELEASE must be exactly 0 or 1" >&2
+    exit 1
+fi
+
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
+    if [[ ! "${EXPECTED_TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]]; then
+        echo "error: release builds require the exact 10-character MACMUTE_TEAM_ID" >&2
+        exit 1
+    fi
     if [[ "${SIGNING_IDENTITY}" != "Developer ID Application:"* ]] \
         || { [[ "${SIGNING_IDENTITY}" != *"BreuSoftware LLC"* ]] \
             && [[ "${SIGNING_IDENTITY}" != *"Breu Software LLC"* ]]; }; then
@@ -38,12 +48,24 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
     fi
 fi
 
+if [[ "${RELEASE_BUILD}" == "1" ]]; then
+    echo "==> Running strict release tests"
+    swift test \
+      -Xswiftc -strict-concurrency=complete \
+      -Xswiftc -warn-concurrency \
+      -Xswiftc -warnings-as-errors
+fi
+
 echo "==> Building release binary"
-swift build -c release
+swift build -c release \
+  -Xswiftc -strict-concurrency=complete \
+  -Xswiftc -warn-concurrency \
+  -Xswiftc -warnings-as-errors
 
 WORK_DIR="$(mktemp -d "$(pwd)/.macmute-app-build.XXXXXX")"
-TEMP_APP_BUNDLE="${WORK_DIR}/${APP_BUNDLE}"
+TEMP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.app"
 BACKUP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.previous.app"
+mkdir -p "$(dirname "${APP_BUNDLE}")"
 
 echo "==> Assembling verified temporary ${APP_BUNDLE}"
 mkdir -p "${TEMP_APP_BUNDLE}/Contents/MacOS"
@@ -78,14 +100,23 @@ else
 fi
 
 codesign --verify --strict --verbose=2 "${TEMP_APP_BUNDLE}"
+if [[ "${RELEASE_BUILD}" == "1" ]]; then
+    ACTUAL_TEAM_ID=$(codesign -dv --verbose=4 "${TEMP_APP_BUNDLE}" 2>&1 \
+      | awk -F= '/^TeamIdentifier=/{print $2; exit}')
+    if [[ "${ACTUAL_TEAM_ID}" != "${EXPECTED_TEAM_ID}" ]]; then
+        echo "error: signed app TeamIdentifier '${ACTUAL_TEAM_ID}' does not match MACMUTE_TEAM_ID" >&2
+        exit 1
+    fi
+    spctl --assess --type execute --verbose=2 "${TEMP_APP_BUNDLE}"
+fi
 
 echo "==> Publishing ${APP_BUNDLE}"
 if [[ -e "${APP_BUNDLE}" ]]; then
     mv "${APP_BUNDLE}" "${BACKUP_APP_BUNDLE}"
 fi
 mv "${TEMP_APP_BUNDLE}" "${APP_BUNDLE}"
-rm -rf "${BACKUP_APP_BUNDLE}"
 PUBLISHED=1
+rm -rf "${BACKUP_APP_BUNDLE}"
 
 echo "==> Done: ${APP_BUNDLE}"
 echo "Run with: open ${APP_BUNDLE}"

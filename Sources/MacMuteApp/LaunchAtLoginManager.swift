@@ -1,5 +1,48 @@
 import ServiceManagement
 
+enum LaunchServiceStatus: Equatable {
+    case enabled
+    case requiresApproval
+    case notRegistered
+    case notFound
+    case unknown
+}
+
+@MainActor
+protocol LaunchServiceControlling: AnyObject {
+    var status: LaunchServiceStatus { get }
+    func register() throws
+    func unregister() throws
+}
+
+@MainActor
+private final class SystemLaunchService: LaunchServiceControlling {
+    var status: LaunchServiceStatus {
+        switch SMAppService.mainApp.status {
+        case .enabled: .enabled
+        case .requiresApproval: .requiresApproval
+        case .notRegistered: .notRegistered
+        case .notFound: .notFound
+        @unknown default: .unknown
+        }
+    }
+
+    func register() throws {
+        try SMAppService.mainApp.register()
+    }
+
+    func unregister() throws {
+        try SMAppService.mainApp.unregister()
+    }
+}
+
+@MainActor
+protocol LaunchAtLoginManaging: AnyObject {
+    var isEnabled: Bool { get }
+    var isRequested: Bool { get }
+    func setEnabled(_ enabled: Bool) -> Result<Bool, LaunchAtLoginError>
+}
+
 enum LaunchAtLoginError: LocalizedError {
     case requestFailed(Error)
     case requiresApproval
@@ -18,26 +61,42 @@ enum LaunchAtLoginError: LocalizedError {
 }
 
 @MainActor
-final class LaunchAtLoginManager {
+final class LaunchAtLoginManager: LaunchAtLoginManaging {
 
     static let shared = LaunchAtLoginManager()
 
-    private init() {}
+    private let service: LaunchServiceControlling
+
+    init(service: LaunchServiceControlling = SystemLaunchService()) {
+        self.service = service
+    }
 
     var isEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
+        service.status == .enabled
+    }
+
+    var isRequested: Bool {
+        let status = service.status
+        return status == .enabled || status == .requiresApproval
     }
 
     @discardableResult
     func setEnabled(_ enabled: Bool) -> Result<Bool, LaunchAtLoginError> {
         do {
             if enabled {
-                if SMAppService.mainApp.status != .enabled {
-                    try SMAppService.mainApp.register()
+                switch service.status {
+                case .enabled:
+                    return .success(true)
+                case .requiresApproval:
+                    return .failure(.requiresApproval)
+                case .notRegistered, .notFound:
+                    try service.register()
+                case .unknown:
+                    return .failure(.stateDidNotChange)
                 }
             } else {
-                if SMAppService.mainApp.status != .notRegistered {
-                    try SMAppService.mainApp.unregister()
+                if service.status != .notRegistered {
+                    try service.unregister()
                 }
             }
         } catch {
@@ -45,13 +104,16 @@ final class LaunchAtLoginManager {
             return .failure(.requestFailed(error))
         }
 
-        let actual = isEnabled
-        guard actual == enabled else {
-            if SMAppService.mainApp.status == .requiresApproval {
+        let status = service.status
+        if enabled {
+            if status == .requiresApproval {
                 return .failure(.requiresApproval)
             }
-            return .failure(.stateDidNotChange)
+            guard status == .enabled else { return .failure(.stateDidNotChange) }
+            return .success(true)
+        } else {
+            guard status == .notRegistered else { return .failure(.stateDidNotChange) }
+            return .success(false)
         }
-        return .success(actual)
     }
 }

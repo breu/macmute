@@ -24,10 +24,8 @@ final class PreferencesWindowController: NSWindowController {
 
 @MainActor
 private struct PreferencesView: View {
-    @State private var shortcutDisplay = HotkeyManager.shared.currentShortcut.displayString
+    @StateObject private var model = PreferencesModel()
     @State private var isRecording = false
-    @State private var launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
-    @State private var errorMessage: String?
 
     @State private var recorder = ShortcutRecorder()
 
@@ -53,26 +51,29 @@ private struct PreferencesView: View {
             HStack {
                 Text("Toggle Mute Shortcut:")
                 Spacer()
-                Button(isRecording ? "Press keys…" : shortcutDisplay) {
+                Button(isRecording ? "Press keys…" : model.shortcutDisplay) {
                     startRecording()
                 }
                 .frame(minWidth: 100)
             }
 
-            Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
-                .onChange(of: launchAtLoginEnabled) { newValue in
-                    switch LaunchAtLoginManager.shared.setEnabled(newValue) {
-                    case .success(let actual):
-                        errorMessage = nil
-                        launchAtLoginEnabled = actual
-                    case .failure(let error):
-                        errorMessage = error.localizedDescription
-                        launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
-                    }
-                }
+            Toggle(
+                "Launch at Login",
+                isOn: Binding(
+                    get: { model.launchAtLoginEnabled },
+                    set: { model.updateLaunchAtLogin($0) }
+                )
+            )
 
-            if let errorMessage {
-                Text(errorMessage)
+            if let hotkeyErrorMessage = model.hotkeyErrorMessage {
+                Text(hotkeyErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let launchErrorMessage = model.launchErrorMessage {
+                Text(launchErrorMessage)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,30 +88,81 @@ private struct PreferencesView: View {
             isRecording = false
         }
         .onAppear {
-            if let error = HotkeyManager.shared.lastRegistrationError {
-                errorMessage = error.localizedDescription
-            }
+            model.refreshExternalState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macMuteHotkeyRegistrationDidChange)) { _ in
+            model.refreshHotkeyState()
         }
     }
 
     private func startRecording() {
         isRecording = true
-        errorMessage = nil
+        model.hotkeyErrorMessage = nil
         recorder.record(
             completion: { shortcut in
-                switch HotkeyManager.shared.updateShortcut(shortcut) {
-                case .success:
-                    shortcutDisplay = shortcut.displayString
-                    errorMessage = nil
-                case .failure(let error):
-                    errorMessage = error.localizedDescription
-                }
+                model.updateShortcut(shortcut)
                 isRecording = false
             },
             onCancel: {
                 isRecording = false
             }
         )
+    }
+
+}
+
+@MainActor
+final class PreferencesModel: ObservableObject {
+    @Published var shortcutDisplay: String
+    @Published var launchAtLoginEnabled: Bool
+    @Published var hotkeyErrorMessage: String?
+    @Published var launchErrorMessage: String?
+
+    private let launchManager: LaunchAtLoginManaging
+    private let hotkeyManager: HotkeyManager
+
+    init(
+        launchManager: LaunchAtLoginManaging = LaunchAtLoginManager.shared,
+        hotkeyManager: HotkeyManager = HotkeyManager.shared
+    ) {
+        self.launchManager = launchManager
+        self.hotkeyManager = hotkeyManager
+        shortcutDisplay = hotkeyManager.currentShortcut.displayString
+        launchAtLoginEnabled = launchManager.isRequested
+    }
+
+    func refreshExternalState() {
+        shortcutDisplay = hotkeyManager.currentShortcut.displayString
+        refreshHotkeyState()
+        launchAtLoginEnabled = launchManager.isRequested
+        launchErrorMessage = launchManager.isRequested && !launchManager.isEnabled
+            ? LaunchAtLoginError.requiresApproval.localizedDescription
+            : nil
+    }
+
+    func refreshHotkeyState() {
+        hotkeyErrorMessage = hotkeyManager.lastRegistrationError?.localizedDescription
+    }
+
+    func updateShortcut(_ shortcut: KeyboardShortcut) {
+        switch hotkeyManager.updateShortcut(shortcut) {
+        case .success:
+            shortcutDisplay = shortcut.displayString
+            hotkeyErrorMessage = nil
+        case .failure(let error):
+            hotkeyErrorMessage = error.localizedDescription
+        }
+    }
+
+    func updateLaunchAtLogin(_ requested: Bool) {
+        switch launchManager.setEnabled(requested) {
+        case .success(let actual):
+            launchErrorMessage = nil
+            launchAtLoginEnabled = actual
+        case .failure(let error):
+            launchErrorMessage = error.localizedDescription
+            launchAtLoginEnabled = launchManager.isRequested
+        }
     }
 }
 
