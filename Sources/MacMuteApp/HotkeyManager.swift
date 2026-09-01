@@ -231,13 +231,9 @@ final class HotkeyManager {
 
                 MainActor.assumeIsolated {
                     if GetEventKind(eventRef) == UInt32(kEventHotKeyPressed) {
-                        guard !manager.hotkeyIsDown else { return }
-                        manager.hotkeyIsDown = true
-                        manager.onHotkeyDown?()
+                        manager.handleCarbonHotkeyEdge(isDown: true)
                     } else {
-                        guard manager.hotkeyIsDown else { return }
-                        manager.hotkeyIsDown = false
-                        manager.onHotkeyUp?()
+                        manager.handleCarbonHotkeyEdge(isDown: false)
                     }
                 }
                 return noErr
@@ -361,6 +357,16 @@ final class HotkeyManager {
         }
     }
 
+    func handleCarbonHotkeyEdge(isDown: Bool) {
+        guard isDown != hotkeyIsDown else { return }
+        hotkeyIsDown = isDown
+        if isDown {
+            onHotkeyDown?()
+        } else {
+            onHotkeyUp?()
+        }
+    }
+
     private func observeWake() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -368,15 +374,15 @@ final class HotkeyManager {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.reinstallFunctionKeyMonitorAfterWake()
+                self?.handleWake()
             }
         }
     }
 
-    private func reinstallFunctionKeyMonitorAfterWake() {
+    func handleWake() {
+        cancelActivePress()
         guard currentShortcut.isFn else { return }
         if let activeRegistration {
-            cancelActivePress()
             unregister(activeRegistration)
             self.activeRegistration = nil
             activeCarbonHotKeyID = nil

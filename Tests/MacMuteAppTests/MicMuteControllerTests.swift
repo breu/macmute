@@ -1,5 +1,6 @@
 import CoreAudio
 import Carbon.HIToolbox
+import AVFoundation
 import Foundation
 import XCTest
 @testable import MacMuteApp
@@ -498,16 +499,34 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(hardware.mutes[2], false)
     }
 
-    func testTransientUIDReadFailureUsesRememberedStableIdentity() {
+    func testTransientUIDReadFailureDoesNotApplyCachedBaselineToUnverifiedDevice() {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
         hardware.volumes[1] = 0.37
         let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
         XCTAssertTrue(controller.setMuted(true))
 
         hardware.persistentIdentifiersAvailable = false
-        XCTAssertTrue(controller.setMuted(false))
+        XCTAssertFalse(controller.setMuted(false))
 
-        XCTAssertEqual(hardware.volumes[1] ?? -1, 0.37, accuracy: 0.0001)
+        XCTAssertEqual(hardware.volumes[1] ?? -1, 0, accuracy: 0.0001)
+    }
+
+    func testReusedAudioObjectIDWithUnavailableUIDNeverReceivesFormerBaseline() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.persistentIdentifiers[1] = "former-device"
+        hardware.persistentIdentifiers[2] = "new-default"
+        hardware.volumes[1] = 0.37
+        hardware.volumes[2] = 0.8
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+
+        hardware.persistentIdentifiersAvailable = false
+        hardware.volumes[1] = 0
+        hardware.defaultDeviceID = 2
+        controller.handleDefaultDeviceChange()
+
+        XCTAssertEqual(hardware.volumes[1] ?? -1, 0, accuracy: 0.0001)
+        XCTAssertFalse(hardware.setVolumeCalls.contains { $0.deviceID == 1 && $0.volume == 0.37 })
     }
 
     func testSessionIdentityUpgradesToUIDWithoutLosingVolumeBaseline() {
@@ -616,6 +635,110 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(relaunchedHardware.volumeSnapshots[1], [1: 0, 2: 0.65])
     }
 
+    func testAddedVolumeChannelUsesSafeDefaultDuringRestore() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumeSnapshots[1] = [1: 0.25, 2: 0.75]
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+
+        hardware.volumeSnapshots[1] = [1: 0, 2: 0, 3: 0]
+        XCTAssertTrue(controller.setMuted(false))
+
+        XCTAssertEqual(hardware.volumeSnapshots[1], [1: 0.25, 2: 0.75, 3: 1])
+    }
+
+    func testRemovedVolumeChannelDoesNotBlockRestore() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumeSnapshots[1] = [1: 0.25, 2: 0.75]
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+
+        hardware.volumeSnapshots[1] = [2: 0]
+        XCTAssertTrue(controller.setMuted(false))
+
+        XCTAssertEqual(hardware.volumeSnapshots[1], [2: 0.75])
+    }
+
+    func testControlResolutionRejectsPartialChannelCoverage() {
+        XCTAssertEqual(
+            CoreAudioDeviceController.resolveWritableControlElements(
+                mainAvailable: false,
+                mainSettable: false,
+                inputElements: [1, 2],
+                availableChannelElements: [1],
+                settableChannelElements: [1]
+            ),
+            []
+        )
+        XCTAssertEqual(
+            CoreAudioDeviceController.resolveWritableControlElements(
+                mainAvailable: false,
+                mainSettable: false,
+                inputElements: [1, 2],
+                availableChannelElements: [1, 2],
+                settableChannelElements: [1]
+            ),
+            []
+        )
+    }
+
+    func testControlResolutionUsesCompleteChannelsOrAggregateMain() {
+        XCTAssertEqual(
+            CoreAudioDeviceController.resolveWritableControlElements(
+                mainAvailable: false,
+                mainSettable: false,
+                inputElements: [1, 2],
+                availableChannelElements: [1, 2],
+                settableChannelElements: [1, 2]
+            ),
+            [1, 2]
+        )
+        XCTAssertEqual(
+            CoreAudioDeviceController.resolveWritableControlElements(
+                mainAvailable: true,
+                mainSettable: true,
+                inputElements: [1, 2],
+                availableChannelElements: [],
+                settableChannelElements: []
+            ),
+            [kAudioObjectPropertyElementMain]
+        )
+    }
+
+    func testAtomicElementWriteRollsBackChangedElementsInReverseOrder() {
+        var values: [UInt32: Int] = [1: 10, 2: 20, 3: 30]
+        var writes: [(UInt32, Int)] = []
+        let succeeded = CoreAudioDeviceController.performAtomicWrite(
+            elements: [1, 2, 3],
+            priorValues: values,
+            desiredValues: [1: 0, 2: 0, 3: 0]
+        ) { element, value in
+            writes.append((element, value))
+            if element == 3 && value == 0 { return false }
+            values[element] = value
+            return true
+        }
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(values, [1: 10, 2: 20, 3: 30])
+        XCTAssertEqual(writes.map(\.0), [1, 2, 3, 2, 1])
+    }
+
+    func testAtomicElementWriteRejectsMismatchedElementSetsWithoutWriting() {
+        var writeCount = 0
+        XCTAssertFalse(
+            CoreAudioDeviceController.performAtomicWrite(
+                elements: [1, 2],
+                priorValues: [1: 1, 2: 1],
+                desiredValues: [1: 0]
+            ) { _, _ in
+                writeCount += 1
+                return true
+            }
+        )
+        XCTAssertEqual(writeCount, 0)
+    }
+
     func testReadOnlyUnmutedNativeControlUsesVolumeRoundTrip() {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.muteProperties.insert(1)
@@ -629,6 +752,19 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertTrue(controller.setMuted(false))
         XCTAssertEqual(hardware.volumes[1] ?? -1, 0.44, accuracy: 0.0001)
         XCTAssertEqual(controller.state, .unmuted)
+    }
+
+    func testReadOnlyNativeMuteUsesOneCoherentSamplePerStateRead() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties.insert(1)
+        hardware.muteSettable = false
+        hardware.muteReadResults = [false, true]
+        hardware.volumes[1] = 0.5
+
+        let state = MicMuteController.readState(on: 1, using: hardware)
+
+        XCTAssertEqual(state, .unmuted)
+        XCTAssertEqual(hardware.muteReadResults.count, 1)
     }
 
     func testAudioObjectIDReusedBeforeDefaultChangeDoesNotTouchReplacement() {
@@ -766,6 +902,75 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertNil(manager.lastRegistrationError)
     }
 
+    func testCarbonPressIsCancelledOnWakeAndNextPressIsAccepted() {
+        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let manager = HotkeyManager(
+            defaults: defaults,
+            observesWake: false,
+            installHandlerOverride: { .success(()) },
+            registrationOverride: { _ in .success(()) }
+        )
+        var downs = 0
+        var ups = 0
+        var cancellations = 0
+        manager.onHotkeyDown = { downs += 1 }
+        manager.onHotkeyUp = { ups += 1 }
+        manager.onHotkeyCancelled = { cancellations += 1 }
+
+        manager.handleCarbonHotkeyEdge(isDown: true)
+        manager.handleWake()
+        manager.handleCarbonHotkeyEdge(isDown: true)
+        manager.handleCarbonHotkeyEdge(isDown: false)
+
+        XCTAssertEqual(downs, 2)
+        XCTAssertEqual(ups, 1)
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    func testSingleTapRunsModeActionAfterDoubleClickWindow() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+        let mic = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        let gesture = PushToTalkController(
+            micController: mic,
+            playsFeedback: false,
+            observesWake: false,
+            initialMode: .pushToMute,
+            doubleClickWindow: 0.01
+        )
+
+        gesture.handleDown()
+        gesture.handleUp()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+
+        XCTAssertEqual(mic.state, .muted)
+    }
+
+    func testDoubleTapChangesModeWithoutRunningFirstTap() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+        let mic = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        let gesture = PushToTalkController(
+            micController: mic,
+            playsFeedback: false,
+            observesWake: false,
+            initialMode: .pushToMute,
+            doubleClickWindow: 1
+        )
+
+        gesture.handleDown()
+        gesture.handleUp()
+        gesture.handleDown()
+        gesture.handleUp()
+
+        XCTAssertEqual(gesture.mode, .pushToUnmute)
+        XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [true])
+    }
+
     func testLaunchAtLoginApprovalRequestRemainsRegistered() {
         let service = FakeLaunchService(status: .notRegistered)
         service.statusAfterRegister = .requiresApproval
@@ -803,6 +1008,25 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(service.unregisterCalls, 0)
     }
 
+    func testLaunchAtLoginUnknownStatusAlsoFailsClosedWhenDisabling() {
+        let service = FakeLaunchService(status: .unknown)
+        let manager = LaunchAtLoginManager(service: service)
+
+        guard case .failure(.stateDidNotChange) = manager.setEnabled(false) else {
+            return XCTFail("Expected unknown status to fail closed")
+        }
+        XCTAssertEqual(service.registerCalls, 0)
+        XCTAssertEqual(service.unregisterCalls, 0)
+    }
+
+    func testLaunchAtLoginNotFoundIsAlreadyDisabled() {
+        let service = FakeLaunchService(status: .notFound)
+        let manager = LaunchAtLoginManager(service: service)
+
+        XCTAssertEqual(try? manager.setEnabled(false).get(), false)
+        XCTAssertEqual(service.unregisterCalls, 0)
+    }
+
     func testPreferencesRefreshesLaunchAtLoginAfterExternalChange() {
         let suiteName = "MacMuteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -830,6 +1054,248 @@ final class MicMuteControllerTests: XCTestCase {
         model.refreshExternalState()
         XCTAssertFalse(model.launchAtLoginEnabled)
         XCTAssertNil(model.launchErrorMessage)
+    }
+
+    func testPreferencesPreservesShortcutDisplayWhenReplacementRegistrationFails() {
+        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var registrationCalls = 0
+        let hotkey = HotkeyManager(
+            defaults: defaults,
+            observesWake: false,
+            installHandlerOverride: { .success(()) },
+            registrationOverride: { _ in
+                registrationCalls += 1
+                return registrationCalls == 1 ? .success(()) : .failure(.shortcutUnavailable(-1))
+            }
+        )
+        let model = PreferencesModel(
+            launchManager: LaunchAtLoginManager(service: FakeLaunchService(status: .notRegistered)),
+            hotkeyManager: hotkey
+        )
+
+        model.updateShortcut(
+            KeyboardShortcut(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(cmdKey | optionKey))
+        )
+
+        XCTAssertEqual(model.shortcutDisplay, KeyboardShortcut.default.displayString)
+        XCTAssertNotNil(model.hotkeyErrorMessage)
+        XCTAssertEqual(hotkey.currentShortcut, .default)
+        XCTAssertTrue(hotkey.hasActiveRegistration)
+    }
+
+    func testPreferencesReflectsLaunchAtLoginRequestFailure() {
+        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let hotkey = HotkeyManager(
+            defaults: defaults,
+            observesWake: false,
+            installHandlerOverride: { .success(()) },
+            registrationOverride: { _ in .success(()) }
+        )
+        let service = FakeLaunchService(status: .notRegistered)
+        service.error = NSError(domain: "tests", code: 1)
+        let model = PreferencesModel(
+            launchManager: LaunchAtLoginManager(service: service),
+            hotkeyManager: hotkey
+        )
+
+        model.updateLaunchAtLogin(true)
+
+        XCTAssertFalse(model.launchAtLoginEnabled)
+        XCTAssertNotNil(model.launchErrorMessage)
+    }
+
+    func testStatusPresentationsCoverEveryMicrophoneStateAndInactiveHotkey() {
+        XCTAssertEqual(
+            StatusBarController.presentation(for: .muted).menuTitle,
+            "Microphone State: Muted"
+        )
+        XCTAssertEqual(
+            StatusBarController.presentation(for: .unmuted).accessibilityDescription,
+            "Microphone unmuted"
+        )
+        XCTAssertEqual(
+            StatusBarController.presentation(for: .unavailable).symbol,
+            "exclamationmark.triangle.fill"
+        )
+        XCTAssertEqual(StatusBarController.hotkeyTitle(error: nil, isActive: true), "Hotkey: Active")
+        XCTAssertEqual(StatusBarController.hotkeyTitle(error: nil, isActive: false), "Hotkey: Inactive")
+        XCTAssertTrue(
+            StatusBarController.hotkeyTitle(error: .monitorUnavailable, isActive: false)
+                .contains("fn-key monitor")
+        )
+    }
+
+    func testSynthesizedFeedbackBuffersAreFiniteAndSized() {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        let click = ClickSoundPlayer.makeClickBuffer(format: format, sampleRate: 44_100)
+        let mode = ClickSoundPlayer.makeModeChangeBuffer(format: format, sampleRate: 44_100)
+
+        XCTAssertEqual(click.frameLength, AVAudioFrameCount(44_100 * 0.03))
+        XCTAssertEqual(mode.frameLength, AVAudioFrameCount(44_100 * 0.12))
+        XCTAssertTrue((0..<Int(click.frameLength)).allSatisfy { click.floatChannelData![0][$0].isFinite })
+        XCTAssertTrue((0..<Int(mode.frameLength)).allSatisfy { mode.floatChannelData![0][$0].isFinite })
+    }
+
+    func testReadableControlResolutionPrefersReadOnlyAggregateMain() {
+        XCTAssertEqual(
+            CoreAudioDeviceController.resolveReadableControlElements(
+                mainAvailable: true,
+                inputElements: [1, 2],
+                availableChannelElements: [1, 2]
+            ),
+            [kAudioObjectPropertyElementMain]
+        )
+        XCTAssertEqual(
+            CoreAudioDeviceController.resolveWritableControlElements(
+                mainAvailable: true,
+                mainSettable: false,
+                inputElements: [1, 2],
+                availableChannelElements: [1, 2],
+                settableChannelElements: [1, 2]
+            ),
+            [1, 2]
+        )
+    }
+
+    func testWritableNativeUnmutedAndZeroVolumeIsStillMuted() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+        hardware.volumes[1] = 0
+
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+
+        XCTAssertEqual(controller.state, .muted)
+    }
+
+    func testNativeMuteCapabilityAppearingAfterFallbackDoesNotStrandZeroVolume() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumes[1] = 0.35
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+        XCTAssertTrue(controller.setMuted(false))
+
+        XCTAssertEqual(hardware.volumes[1] ?? -1, 0.35, accuracy: 0.0001)
+        XCTAssertEqual(controller.state, .unmuted)
+    }
+
+    func testAcceptedAsynchronousMuteRemainsOwnedUntilObservedAndRestored() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+        hardware.deferMuteWrites = true
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+
+        XCTAssertTrue(controller.setMuted(true))
+        XCTAssertEqual(controller.state, .unmuted)
+        hardware.completeDeferredWrites()
+        hardware.deferMuteWrites = false
+        controller.refreshState()
+        XCTAssertEqual(controller.state, .muted)
+
+        hardware.defaultDeviceID = 2
+        hardware.muteProperties.insert(2)
+        hardware.mutes[2] = false
+        controller.handleDefaultDeviceChange()
+        XCTAssertEqual(hardware.mutes[1], false)
+    }
+
+    func testAcceptedAsynchronousVolumeRoundTripWaitsForObservation() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumes[1] = 0.42
+        hardware.deferVolumeWrites = true
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+
+        XCTAssertTrue(controller.setMuted(true))
+        XCTAssertEqual(controller.state, .unmuted)
+        hardware.completeDeferredWrites()
+        controller.refreshState()
+        XCTAssertEqual(controller.state, .muted)
+
+        XCTAssertTrue(controller.setMuted(false))
+        XCTAssertEqual(controller.state, .muted)
+        hardware.completeDeferredWrites()
+        hardware.deferVolumeWrites = false
+        controller.refreshState()
+        XCTAssertEqual(controller.state, .unmuted)
+        XCTAssertEqual(hardware.volumes[1] ?? -1, 0.42, accuracy: 0.0001)
+    }
+
+    func testWakeRefusesCachedIdentityWhenLiveUIDCannotBeRead() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+        controller.prepareForSleep()
+        hardware.setMuteCalls.removeAll()
+        hardware.persistentIdentifiersAvailable = false
+        hardware.mutes[1] = false
+
+        controller.handleWake()
+
+        XCTAssertEqual(hardware.setMuteCalls, [])
+        XCTAssertEqual(controller.state, .unmuted)
+    }
+
+    func testDefaultDeviceChangingDuringWriteFailsClosedWithoutTouchingNewDefault() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties = [1, 2]
+        hardware.mutes = [1: false, 2: false]
+        hardware.onSetMute = { hardware.defaultDeviceID = 2 }
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+
+        XCTAssertFalse(controller.setMuted(true))
+
+        XCTAssertEqual(hardware.mutes[2], false)
+        XCTAssertEqual(hardware.setMuteCalls.map(\.deviceID), [1])
+        XCTAssertEqual(controller.state, .unavailable)
+    }
+
+    func testMalformedPersistedVolumeSnapshotIsRejectedAsAWhole() {
+        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(["uid:stable-1": ["1": 0.2, "2": true]], forKey: "MacMute.savedInputVolumes")
+        defaults.set(["uid:stable-1"], forKey: "MacMute.appMutedInputDevices")
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
+        hardware.volumeSnapshots[1] = [1: 0, 2: 0]
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
+
+        XCTAssertTrue(controller.setMuted(false))
+
+        XCTAssertEqual(hardware.volumeSnapshots[1], [1: 1, 2: 1])
+    }
+
+    func testNonBooleanPersistedPendingIntentIsRejected() {
+        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(["uid:stable-1": 2], forKey: "MacMute.pendingInputStates")
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = false
+
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
+
+        XCTAssertEqual(controller.state, .unmuted)
+        XCTAssertEqual(hardware.setMuteCalls, [])
+    }
+
+    func testLaunchAtLoginAcceptsNotFoundAfterUnregister() {
+        let service = FakeLaunchService(status: .enabled)
+        service.statusAfterUnregister = .notFound
+        let manager = LaunchAtLoginManager(service: service)
+
+        XCTAssertEqual(try? manager.setEnabled(false).get(), false)
+        XCTAssertEqual(service.unregisterCalls, 1)
     }
 }
 
@@ -861,6 +1327,12 @@ private final class FakeAudioDeviceController: AudioDeviceControlling {
     var persistentIdentifiersAvailable = true
     var persistentIdentifiers: [AudioDeviceID: String] = [:]
     var muteReadsSucceed = true
+    var muteReadResults: [Bool?] = []
+    var deferMuteWrites = false
+    var deferredMuteWrites: [AudioDeviceID: Bool] = [:]
+    var onSetMute: (() -> Void)?
+    var deferVolumeWrites = false
+    var deferredVolumeWrites: [AudioDeviceID: InputVolumeSnapshot] = [:]
 
     private var defaultDeviceChangeHandler: (@MainActor () -> Void)?
     private var stateChangeHandler: (@MainActor () -> Void)?
@@ -888,13 +1360,21 @@ private final class FakeAudioDeviceController: AudioDeviceControlling {
     }
 
     func readMute(on deviceID: AudioDeviceID) -> Bool? {
-        muteReadsSucceed ? mutes[deviceID] : nil
+        if !muteReadResults.isEmpty {
+            return muteReadResults.removeFirst()
+        }
+        return muteReadsSucceed ? mutes[deviceID] : nil
     }
 
     func setMute(_ muted: Bool, on deviceID: AudioDeviceID) -> Bool {
         setMuteCalls.append(MuteCall(muted: muted, deviceID: deviceID))
         guard muteWritesSucceed else { return false }
-        mutes[deviceID] = muted
+        if deferMuteWrites {
+            deferredMuteWrites[deviceID] = muted
+        } else {
+            mutes[deviceID] = muted
+        }
+        onSetMute?()
         return true
     }
 
@@ -916,13 +1396,28 @@ private final class FakeAudioDeviceController: AudioDeviceControlling {
             return false
         }
         guard volumeWritesSucceed else { return false }
+        if deferVolumeWrites {
+            deferredVolumeWrites[deviceID] = snapshot
+            return true
+        }
+        applyVolumes(snapshot, on: deviceID)
+        return true
+    }
+
+    func completeDeferredWrites() {
+        for (deviceID, muted) in deferredMuteWrites { mutes[deviceID] = muted }
+        deferredMuteWrites.removeAll()
+        for (deviceID, snapshot) in deferredVolumeWrites { applyVolumes(snapshot, on: deviceID) }
+        deferredVolumeWrites.removeAll()
+    }
+
+    private func applyVolumes(_ snapshot: InputVolumeSnapshot, on deviceID: AudioDeviceID) {
         if volumeSnapshots[deviceID] != nil || snapshot.keys.contains(where: { $0 != 0 }) {
             volumeSnapshots[deviceID] = snapshot
         }
         if let main = snapshot[0] {
             volumes[deviceID] = main
         }
-        return true
     }
 
     func observeDefaultDeviceChanges(_ handler: @escaping @MainActor () -> Void) -> Bool {

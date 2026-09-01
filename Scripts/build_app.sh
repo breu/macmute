@@ -5,11 +5,13 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="MacMute"
 EXECUTABLE_NAME="MacMuteApp"
-BUILD_DIR=".build/release"
+BUILD_DIR=".build/apple/Products/Release"
 APP_BUNDLE="${MACMUTE_APP_OUTPUT:-${APP_NAME}.app}"
 RELEASE_BUILD="${MACMUTE_RELEASE:-0}"
 SIGNING_IDENTITY="${MACMUTE_SIGNING_IDENTITY:--}"
-EXPECTED_TEAM_ID="${MACMUTE_TEAM_ID:-}"
+REQUESTED_TEAM_ID="${MACMUTE_TEAM_ID:-}"
+TEAM_ID_FILE="Resources/BreuSoftwareTeamID.txt"
+EXPECTED_TEAM_ID=""
 WORK_DIR=""
 TEMP_APP_BUNDLE=""
 BACKUP_APP_BUNDLE=""
@@ -25,19 +27,42 @@ cleanup() {
 }
 trap cleanup EXIT
 
+repository_inputs_are_clean() {
+    [[ -z "$(git status --porcelain --untracked-files=all -- Package.swift README.md Sources Tests Scripts Resources)" ]]
+}
+
+require_pristine_release_inputs() {
+    if ! repository_inputs_are_clean; then
+        echo "error: release builds require pristine tracked and untracked release inputs" >&2
+        exit 1
+    fi
+    if ! git ls-files --error-unmatch -- "${TEAM_ID_FILE}" >/dev/null 2>&1; then
+        echo "error: the pinned BreuSoftware Team ID file must be committed" >&2
+        exit 1
+    fi
+}
+
 if [[ "${RELEASE_BUILD}" != "0" && "${RELEASE_BUILD}" != "1" ]]; then
     echo "error: MACMUTE_RELEASE must be exactly 0 or 1" >&2
     exit 1
 fi
 
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
-    if [[ ! "${EXPECTED_TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]]; then
-        echo "error: release builds require the exact 10-character MACMUTE_TEAM_ID" >&2
+    if [[ ! -f "${TEAM_ID_FILE}" ]]; then
+        echo "error: missing pinned BreuSoftware Team ID file: ${TEAM_ID_FILE}" >&2
         exit 1
     fi
-    if [[ "${SIGNING_IDENTITY}" != "Developer ID Application:"* ]] \
-        || { [[ "${SIGNING_IDENTITY}" != *"BreuSoftware LLC"* ]] \
-            && [[ "${SIGNING_IDENTITY}" != *"Breu Software LLC"* ]]; }; then
+    EXPECTED_TEAM_ID=$(tr -d '[:space:]' < "${TEAM_ID_FILE}")
+    if [[ ! "${EXPECTED_TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]]; then
+        echo "error: configure BreuSoftware's exact 10-character Team ID in ${TEAM_ID_FILE}" >&2
+        exit 1
+    fi
+    if [[ -n "${REQUESTED_TEAM_ID}" && "${REQUESTED_TEAM_ID}" != "${EXPECTED_TEAM_ID}" ]]; then
+        echo "error: MACMUTE_TEAM_ID does not match the repository-pinned BreuSoftware Team ID" >&2
+        exit 1
+    fi
+    if [[ "${SIGNING_IDENTITY}" != "Developer ID Application: BreuSoftware LLC (${EXPECTED_TEAM_ID})" ]] \
+        && [[ "${SIGNING_IDENTITY}" != "Developer ID Application: Breu Software LLC (${EXPECTED_TEAM_ID})" ]]; then
         echo "error: release builds require BreuSoftware LLC's full Developer ID Application identity" >&2
         echo "set MACMUTE_SIGNING_IDENTITY to the exact identity shown by security find-identity" >&2
         exit 1
@@ -46,23 +71,31 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
         echo "error: the requested BreuSoftware LLC signing identity is not available in this keychain" >&2
         exit 1
     fi
+    require_pristine_release_inputs
 fi
 
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
     echo "==> Running strict release tests"
-    swift test \
+    swift test --enable-code-coverage \
       -Xswiftc -strict-concurrency=complete \
       -Xswiftc -warn-concurrency \
       -Xswiftc -warnings-as-errors
+    COVERAGE_JSON=$(swift test --show-codecov-path)
+    swift Scripts/check_coverage.swift "${COVERAGE_JSON}" 45.0
+    require_pristine_release_inputs
 fi
 
-echo "==> Building release binary"
-swift build -c release \
+echo "==> Building universal release binary"
+swift build -c release --arch arm64 --arch x86_64 \
   -Xswiftc -strict-concurrency=complete \
   -Xswiftc -warn-concurrency \
   -Xswiftc -warnings-as-errors
 
-WORK_DIR="$(mktemp -d "$(pwd)/.macmute-app-build.XXXXXX")"
+if [[ "${RELEASE_BUILD}" == "1" ]]; then
+    require_pristine_release_inputs
+fi
+
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/macmute-app-build.XXXXXX")"
 TEMP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.app"
 BACKUP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.previous.app"
 mkdir -p "$(dirname "${APP_BUNDLE}")"
@@ -72,9 +105,16 @@ mkdir -p "${TEMP_APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${TEMP_APP_BUNDLE}/Contents/Resources"
 
 cp "${BUILD_DIR}/${EXECUTABLE_NAME}" "${TEMP_APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+lipo "${TEMP_APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64 x86_64
 
 cp Resources/Info.plist "${TEMP_APP_BUNDLE}/Contents/Info.plist"
 cp Resources/RaptorIcon.png "${TEMP_APP_BUNDLE}/Contents/Resources/RaptorIcon.png"
+SOURCE_REVISION=$(git rev-parse --verify HEAD 2>/dev/null || echo development)
+if ! repository_inputs_are_clean 2>/dev/null; then
+    SOURCE_REVISION="${SOURCE_REVISION}-dirty"
+fi
+/usr/libexec/PlistBuddy -c "Add :MacMuteSourceRevision string ${SOURCE_REVISION}" \
+  "${TEMP_APP_BUNDLE}/Contents/Info.plist"
 
 echo "==> Generating app icon"
 ICON_WORK_DIR="${WORK_DIR}/icon-work"
@@ -101,6 +141,7 @@ fi
 
 codesign --verify --strict --verbose=2 "${TEMP_APP_BUNDLE}"
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
+    require_pristine_release_inputs
     ACTUAL_TEAM_ID=$(codesign -dv --verbose=4 "${TEMP_APP_BUNDLE}" 2>&1 \
       | awk -F= '/^TeamIdentifier=/{print $2; exit}')
     if [[ "${ACTUAL_TEAM_ID}" != "${EXPECTED_TEAM_ID}" ]]; then

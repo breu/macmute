@@ -3,6 +3,12 @@ import AppKit
 @MainActor
 final class StatusBarController {
 
+    struct MicrophonePresentation: Equatable {
+        let symbol: String
+        let accessibilityDescription: String
+        let menuTitle: String
+    }
+
     private let statusItem: NSStatusItem
     private let muteController = MicMuteController.shared
     private let pushToTalk = PushToTalkController.shared
@@ -135,7 +141,7 @@ final class StatusBarController {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "MacMute",
             .applicationVersion: version,
-            .credits: NSAttributedString(string: "Mutes your Mac's system microphone system-wide, at the hardware level.\n\nWritten by Joe Breu.")
+            .credits: NSAttributedString(string: "Mutes the current default input device for apps that use it. Apps that explicitly select another input are outside MacMute's control.\n\nWritten by Joe Breu.")
         ])
     }
 
@@ -144,35 +150,46 @@ final class StatusBarController {
     }
 
     private func updateMicrophoneState(_ state: MicrophoneState) {
-        let symbol: String
-        let description: String
-        let menuTitle: String
+        let presentation = Self.presentation(for: state)
+        statusItem.button?.image = NSImage(
+            systemSymbolName: presentation.symbol,
+            accessibilityDescription: presentation.accessibilityDescription
+        )
+        microphoneStateItem?.title = presentation.menuTitle
+    }
+
+    static func presentation(for state: MicrophoneState) -> MicrophonePresentation {
         switch state {
         case .muted:
-            symbol = mutedSymbol
-            description = "Microphone muted"
-            menuTitle = "Microphone State: Muted"
+            MicrophonePresentation(
+                symbol: "mic.slash.fill",
+                accessibilityDescription: "Microphone muted",
+                menuTitle: "Microphone State: Muted"
+            )
         case .unmuted:
-            symbol = unmutedSymbol
-            description = "Microphone unmuted"
-            menuTitle = "Microphone State: Unmuted"
+            MicrophonePresentation(
+                symbol: "mic.fill",
+                accessibilityDescription: "Microphone unmuted",
+                menuTitle: "Microphone State: Unmuted"
+            )
         case .unavailable:
-            symbol = unavailableSymbol
-            description = "Microphone state unavailable"
-            menuTitle = "Microphone State: Unavailable"
+            MicrophonePresentation(
+                symbol: "exclamationmark.triangle.fill",
+                accessibilityDescription: "Microphone state unavailable",
+                menuTitle: "Microphone State: Unavailable"
+            )
         }
-        statusItem.button?.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: description
-        )
-        microphoneStateItem?.title = menuTitle
     }
 
     private func updateHotkeyState() {
-        if let error = HotkeyManager.shared.lastRegistrationError {
-            hotkeyStateItem?.title = "Hotkey: \(error.localizedDescription)"
-        } else {
-            hotkeyStateItem?.title = "Hotkey: Active"
-        }
+        hotkeyStateItem?.title = Self.hotkeyTitle(
+            error: HotkeyManager.shared.lastRegistrationError,
+            isActive: HotkeyManager.shared.hasActiveRegistration
+        )
+    }
+
+    static func hotkeyTitle(error: HotkeyRegistrationError?, isActive: Bool) -> String {
+        if let error { return "Hotkey: \(error.localizedDescription)" }
+        return isActive ? "Hotkey: Active" : "Hotkey: Inactive"
     }
 }

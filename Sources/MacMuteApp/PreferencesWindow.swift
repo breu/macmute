@@ -122,13 +122,15 @@ final class PreferencesModel: ObservableObject {
     private let hotkeyManager: HotkeyManager
 
     init(
-        launchManager: LaunchAtLoginManaging = LaunchAtLoginManager.shared,
-        hotkeyManager: HotkeyManager = HotkeyManager.shared
+        launchManager: LaunchAtLoginManaging? = nil,
+        hotkeyManager: HotkeyManager? = nil
     ) {
-        self.launchManager = launchManager
-        self.hotkeyManager = hotkeyManager
-        shortcutDisplay = hotkeyManager.currentShortcut.displayString
-        launchAtLoginEnabled = launchManager.isRequested
+        let resolvedLaunchManager = launchManager ?? LaunchAtLoginManager.shared
+        let resolvedHotkeyManager = hotkeyManager ?? HotkeyManager.shared
+        self.launchManager = resolvedLaunchManager
+        self.hotkeyManager = resolvedHotkeyManager
+        shortcutDisplay = resolvedHotkeyManager.currentShortcut.displayString
+        launchAtLoginEnabled = resolvedLaunchManager.isRequested
     }
 
     func refreshExternalState() {

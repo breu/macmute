@@ -1,6 +1,6 @@
 # MacMute
 
-A lightweight menu bar utility that mutes your Mac's system microphone. It mutes at the CoreAudio hardware level on the default input device, so the mute applies across every app system-wide — not just one app's own mute button.
+A lightweight menu bar utility that mutes your Mac's current default input device at the CoreAudio hardware level. The mute applies to apps using that default device, not just one app's own mute button. An app that explicitly selects a different input device is outside MacMute's control.
 
 ## Features
 
@@ -27,7 +27,7 @@ Requires Xcode Command Line Tools (`xcode-select --install`) and macOS 13+.
 ./Scripts/build_app.sh
 ```
 
-This runs `swift build -c release`, assembles `MacMute.app`, ad-hoc signs it for local development, and verifies the resulting bundle. It does not modify the microphone merely by building or launching the app.
+This builds a universal Apple Silicon and Intel release binary, assembles `MacMute.app`, ad-hoc signs it for local development, and verifies the resulting bundle. It does not modify the microphone merely by building or launching the app.
 
 Run the regression suite with:
 
@@ -63,13 +63,12 @@ First save App Store Connect notarization credentials in Keychain using `xcrun n
 
 ```sh
 export MACMUTE_RELEASE=1
-export MACMUTE_SIGNING_IDENTITY='Developer ID Application: BreuSoftware LLC (TEAMID)'
-export MACMUTE_TEAM_ID='TEAMID1234'
+export MACMUTE_SIGNING_IDENTITY='Developer ID Application: Breu Software LLC (6Q66ZYGK4J)'
 export MACMUTE_NOTARY_PROFILE='breusoftware-notary'
 ./Scripts/build_dmg.sh
 ```
 
-Replace the example identity, 10-character team ID, and profile name with BreuSoftware LLC's actual values. Release mode runs the strict test suite, applies the hardened runtime and secure timestamp, verifies the signed app's exact TeamIdentifier and Apple trust assessment, signs the DMG, submits it to Apple, staples the notarization ticket, and only then publishes the app and DMG together. Never create or globally trust a self-signed certificate for a public release.
+The repository pins BreuSoftware LLC's Apple Team ID in `Resources/BreuSoftwareTeamID.txt`. Replace the example profile name above if your saved Keychain profile uses a different name. Release mode requires pristine tracked and untracked release inputs, runs the strict test suite with aggregate and critical-file coverage floors, builds and verifies a universal Apple Silicon/Intel executable, embeds the source revision, applies the hardened runtime and secure timestamp, verifies the signed app against the pinned Team ID and Apple trust assessment, mounts and inspects the DMG before and after notarization, and only then publishes the app and DMG together. `MACMUTE_TEAM_ID` is optional; if supplied by CI it must match the pinned value. Never create or globally trust a self-signed certificate for a public release.
 
 ## Notes
 

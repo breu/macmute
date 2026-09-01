@@ -67,8 +67,8 @@ final class LaunchAtLoginManager: LaunchAtLoginManaging {
 
     private let service: LaunchServiceControlling
 
-    init(service: LaunchServiceControlling = SystemLaunchService()) {
-        self.service = service
+    init(service: LaunchServiceControlling? = nil) {
+        self.service = service ?? SystemLaunchService()
     }
 
     var isEnabled: Bool {
@@ -95,8 +95,13 @@ final class LaunchAtLoginManager: LaunchAtLoginManaging {
                     return .failure(.stateDidNotChange)
                 }
             } else {
-                if service.status != .notRegistered {
+                switch service.status {
+                case .enabled, .requiresApproval:
                     try service.unregister()
+                case .notRegistered, .notFound:
+                    return .success(false)
+                case .unknown:
+                    return .failure(.stateDidNotChange)
                 }
             }
         } catch {
@@ -112,7 +117,9 @@ final class LaunchAtLoginManager: LaunchAtLoginManaging {
             guard status == .enabled else { return .failure(.stateDidNotChange) }
             return .success(true)
         } else {
-            guard status == .notRegistered else { return .failure(.stateDidNotChange) }
+            guard status == .notRegistered || status == .notFound else {
+                return .failure(.stateDidNotChange)
+            }
             return .success(false)
         }
     }

@@ -74,19 +74,15 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
     }
 
     func hasMuteProperty(on deviceID: AudioDeviceID) -> Bool {
-        !controlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).isEmpty
+        !readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).isEmpty
     }
 
     func isMuteSettable(on deviceID: AudioDeviceID) -> Bool {
-        let addresses = controlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
-        return !addresses.isEmpty && addresses.allSatisfy { address in
-            var address = address
-            return Self.isSettable(deviceID: deviceID, address: &address)
-        }
+        !writableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).isEmpty
     }
 
     func readMute(on deviceID: AudioDeviceID) -> Bool? {
-        let values = controlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).map { address -> Bool? in
+        let values = readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).map { address -> Bool? in
             var address = address
             var value: UInt32 = 0
             var size = UInt32(MemoryLayout<UInt32>.size)
@@ -98,7 +94,7 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
     }
 
     func setMute(_ muted: Bool, on deviceID: AudioDeviceID) -> Bool {
-        let addresses = controlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
+        let addresses = writableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
         guard !addresses.isEmpty else { return false }
         var priorValues: [UInt32: UInt32] = [:]
         for address in addresses {
@@ -110,36 +106,34 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
             }
             priorValues[address.mElement] = value
         }
-        var changed: [AudioObjectPropertyAddress] = []
-        for originalAddress in addresses {
-            var address = originalAddress
-            var value: UInt32 = muted ? 1 : 0
-            guard AudioObjectSetPropertyData(
+        let addressesByElement = Dictionary(uniqueKeysWithValues: addresses.map { ($0.mElement, $0) })
+        let desiredValues = Dictionary(
+            uniqueKeysWithValues: addresses.map { ($0.mElement, muted ? UInt32(1) : UInt32(0)) }
+        )
+        return Self.performAtomicWrite(
+            elements: addresses.map(\.mElement),
+            priorValues: priorValues,
+            desiredValues: desiredValues
+        ) { element, value in
+            guard var address = addressesByElement[element] else { return false }
+            var value = value
+            return AudioObjectSetPropertyData(
                 deviceID,
                 &address,
                 0,
                 nil,
                 UInt32(MemoryLayout<UInt32>.size),
                 &value
-            ) == noErr else {
-                rollbackMute(changed, to: priorValues, on: deviceID)
-                return false
-            }
-            changed.append(originalAddress)
+            ) == noErr
         }
-        return true
     }
 
     func isVolumeSettable(on deviceID: AudioDeviceID) -> Bool {
-        let addresses = controlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
-        return !addresses.isEmpty && addresses.allSatisfy { address in
-            var address = address
-            return Self.isSettable(deviceID: deviceID, address: &address)
-        }
+        !writableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID).isEmpty
     }
 
     func readVolumes(on deviceID: AudioDeviceID) -> InputVolumeSnapshot? {
-        let addresses = controlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
+        let addresses = readableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
         guard !addresses.isEmpty else { return nil }
         var result: InputVolumeSnapshot = [:]
         for originalAddress in addresses {
@@ -156,30 +150,39 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
     }
 
     func setVolumes(_ volumes: InputVolumeSnapshot, on deviceID: AudioDeviceID) -> Bool {
-        let addresses = controlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
+        let addresses = writableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
         guard !addresses.isEmpty,
               Set(addresses.map(\.mElement)) == Set(volumes.keys),
-              volumes.values.allSatisfy({ $0.isFinite && (0...1).contains($0) }),
-              let prior = readVolumes(on: deviceID)
+              volumes.values.allSatisfy({ $0.isFinite && (0...1).contains($0) })
         else { return false }
-        var changed: [AudioObjectPropertyAddress] = []
+        var prior: InputVolumeSnapshot = [:]
         for originalAddress in addresses {
             var address = originalAddress
-            var value = volumes[address.mElement]!
-            guard AudioObjectSetPropertyData(
+            var value: Float32 = 0
+            var size = UInt32(MemoryLayout<Float32>.size)
+            guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr,
+                  value.isFinite,
+                  (0...1).contains(value)
+            else { return false }
+            prior[address.mElement] = value
+        }
+        let addressesByElement = Dictionary(uniqueKeysWithValues: addresses.map { ($0.mElement, $0) })
+        return Self.performAtomicWrite(
+            elements: addresses.map(\.mElement),
+            priorValues: prior,
+            desiredValues: volumes
+        ) { element, value in
+            guard var address = addressesByElement[element] else { return false }
+            var value = value
+            return AudioObjectSetPropertyData(
                 deviceID,
                 &address,
                 0,
                 nil,
                 UInt32(MemoryLayout<Float32>.size),
                 &value
-            ) == noErr else {
-                rollbackVolumes(changed, to: prior, on: deviceID)
-                return false
-            }
-            changed.append(originalAddress)
+            ) == noErr
         }
-        return true
     }
 
     func observeDefaultDeviceChanges(_ handler: @escaping @MainActor () -> Void) -> Bool {
@@ -214,9 +217,15 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
         stateChangeHandler = handler
         guard let deviceID else { return false }
 
-        var addresses = controlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
-        if addresses.isEmpty || !isMuteSettable(on: deviceID) {
-            addresses.append(contentsOf: controlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID))
+        var addresses = readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
+        addresses.append(contentsOf: writableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID))
+        addresses.append(contentsOf: readableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID))
+        addresses.append(contentsOf: writableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID))
+        addresses = addresses.reduce(into: []) { result, address in
+            guard !result.contains(where: {
+                $0.mSelector == address.mSelector && $0.mScope == address.mScope && $0.mElement == address.mElement
+            }) else { return }
+            result.append(address)
         }
         guard !addresses.isEmpty else { return false }
 
@@ -263,10 +272,17 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
         stateListenerBlock = nil
     }
 
-    private func controlAddresses(
+    private func controlAddressInventory(
         selector: AudioObjectPropertySelector,
         on deviceID: AudioDeviceID
-    ) -> [AudioObjectPropertyAddress] {
+    ) -> (
+        main: AudioObjectPropertyAddress,
+        mainAvailable: Bool,
+        mainSettable: Bool,
+        inputElements: [UInt32],
+        channels: [UInt32: AudioObjectPropertyAddress],
+        settableChannels: Set<UInt32>
+    ) {
         var main = AudioObjectPropertyAddress(
             mSelector: selector,
             mScope: kAudioObjectPropertyScopeInput,
@@ -274,25 +290,82 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
         )
         let hasMain = AudioObjectHasProperty(deviceID, &main)
         var mainForSettableCheck = main
-        if hasMain, Self.isSettable(deviceID: deviceID, address: &mainForSettableCheck) {
-            return [main]
-        }
-        let channelAddresses = inputChannelElements(on: deviceID).compactMap { element in
+        let mainIsSettable = hasMain && Self.isSettable(deviceID: deviceID, address: &mainForSettableCheck)
+        let inputElements = inputChannelElements(on: deviceID)
+        let channelAddressesByElement = Dictionary(uniqueKeysWithValues: inputElements.compactMap { element in
             var address = AudioObjectPropertyAddress(
                 mSelector: selector,
                 mScope: kAudioObjectPropertyScopeInput,
                 mElement: element
             )
-            return AudioObjectHasProperty(deviceID, &address) ? address : nil
+            return AudioObjectHasProperty(deviceID, &address) ? (element, address) : nil
+        })
+        let settableChannelElements = Set(channelAddressesByElement.compactMap { element, originalAddress in
+            var address = originalAddress
+            return Self.isSettable(deviceID: deviceID, address: &address) ? element : nil
+        })
+        return (main, hasMain, mainIsSettable, inputElements, channelAddressesByElement, settableChannelElements)
+    }
+
+    private func readableControlAddresses(
+        selector: AudioObjectPropertySelector,
+        on deviceID: AudioDeviceID
+    ) -> [AudioObjectPropertyAddress] {
+        let inventory = controlAddressInventory(selector: selector, on: deviceID)
+        let selectedElements = Self.resolveReadableControlElements(
+            mainAvailable: inventory.mainAvailable,
+            inputElements: inventory.inputElements,
+            availableChannelElements: Set(inventory.channels.keys)
+        )
+        return selectedElements.compactMap { element in
+            element == kAudioObjectPropertyElementMain ? inventory.main : inventory.channels[element]
         }
-        if !channelAddresses.isEmpty,
-           channelAddresses.allSatisfy({ originalAddress in
-               var address = originalAddress
-               return Self.isSettable(deviceID: deviceID, address: &address)
-           }) {
-            return channelAddresses
+    }
+
+    private func writableControlAddresses(
+        selector: AudioObjectPropertySelector,
+        on deviceID: AudioDeviceID
+    ) -> [AudioObjectPropertyAddress] {
+        let inventory = controlAddressInventory(selector: selector, on: deviceID)
+        let selectedElements = Self.resolveWritableControlElements(
+            mainAvailable: inventory.mainAvailable,
+            mainSettable: inventory.mainSettable,
+            inputElements: inventory.inputElements,
+            availableChannelElements: Set(inventory.channels.keys),
+            settableChannelElements: inventory.settableChannels
+        )
+        return selectedElements.compactMap { element in
+            element == kAudioObjectPropertyElementMain ? inventory.main : inventory.channels[element]
         }
-        return hasMain ? [main] : channelAddresses
+    }
+
+    static func resolveReadableControlElements(
+        mainAvailable: Bool,
+        inputElements: [UInt32],
+        availableChannelElements: Set<UInt32>
+    ) -> [UInt32] {
+        if mainAvailable { return [kAudioObjectPropertyElementMain] }
+        let required = Set(inputElements)
+        return !required.isEmpty && required.isSubset(of: availableChannelElements) ? inputElements : []
+    }
+
+    static func resolveWritableControlElements(
+        mainAvailable: Bool,
+        mainSettable: Bool,
+        inputElements: [UInt32],
+        availableChannelElements: Set<UInt32>,
+        settableChannelElements: Set<UInt32>
+    ) -> [UInt32] {
+        if mainAvailable, mainSettable {
+            return [kAudioObjectPropertyElementMain]
+        }
+        let required = Set(inputElements)
+        if !required.isEmpty,
+           required.isSubset(of: availableChannelElements),
+           required.isSubset(of: settableChannelElements) {
+            return inputElements
+        }
+        return []
     }
 
     private func inputChannelElements(on deviceID: AudioDeviceID) -> [UInt32] {
@@ -320,42 +393,28 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
         return (1...channelCount).map(UInt32.init)
     }
 
-    private func rollbackMute(
-        _ addresses: [AudioObjectPropertyAddress],
-        to priorValues: [UInt32: UInt32],
-        on deviceID: AudioDeviceID
-    ) {
-        for originalAddress in addresses {
-            guard var value = priorValues[originalAddress.mElement] else { continue }
-            var address = originalAddress
-            _ = AudioObjectSetPropertyData(
-                deviceID,
-                &address,
-                0,
-                nil,
-                UInt32(MemoryLayout<UInt32>.size),
-                &value
-            )
+    static func performAtomicWrite<Value>(
+        elements: [UInt32],
+        priorValues: [UInt32: Value],
+        desiredValues: [UInt32: Value],
+        write: (UInt32, Value) -> Bool
+    ) -> Bool {
+        guard Set(elements) == Set(priorValues.keys),
+              Set(elements) == Set(desiredValues.keys)
+        else { return false }
+        var changed: [UInt32] = []
+        for element in elements {
+            guard let desired = desiredValues[element], write(element, desired) else {
+                for changedElement in changed.reversed() {
+                    if let prior = priorValues[changedElement] {
+                        _ = write(changedElement, prior)
+                    }
+                }
+                return false
+            }
+            changed.append(element)
         }
-    }
-
-    private func rollbackVolumes(
-        _ addresses: [AudioObjectPropertyAddress],
-        to priorValues: InputVolumeSnapshot,
-        on deviceID: AudioDeviceID
-    ) {
-        for originalAddress in addresses {
-            guard var value = priorValues[originalAddress.mElement] else { continue }
-            var address = originalAddress
-            _ = AudioObjectSetPropertyData(
-                deviceID,
-                &address,
-                0,
-                nil,
-                UInt32(MemoryLayout<Float32>.size),
-                &value
-            )
-        }
+        return true
     }
 
     private static func isSettable(
@@ -402,6 +461,12 @@ final class MicMuteController {
     private static let appMutedDevicesDefaultsKey = "MacMute.appMutedInputDevices"
     private static let pendingDesiredStatesDefaultsKey = "MacMute.pendingInputStates"
 
+    private struct DeviceIdentity {
+        let deviceID: AudioDeviceID
+        let key: String
+        let mustRemainDefault: Bool
+    }
+
     init(
         hardware: AudioDeviceControlling,
         observeSystemChanges: Bool = true,
@@ -421,8 +486,9 @@ final class MicMuteController {
         }
         if state == .unmuted,
            let currentDeviceID,
-           pendingDesiredState(for: currentDeviceID) != true {
-            removeAppMuteOwnership(for: currentDeviceID)
+           let identity = validatedIdentity(for: currentDeviceID, mustRemainDefault: true),
+           pendingDesiredStates[identity.key] != true {
+            removeAppMuteOwnership(identity)
         }
 
         guard observeSystemChanges else { return }
@@ -451,7 +517,9 @@ final class MicMuteController {
     @discardableResult
     func setMuted(_ muted: Bool, retryOnFailure: Bool = false) -> Bool {
         reconcileCurrentDeviceIfNeeded()
-        guard let deviceID = currentDeviceID else {
+        guard let deviceID = currentDeviceID,
+              let identity = validatedIdentity(for: deviceID, mustRemainDefault: true)
+        else {
             if retryOnFailure {
                 pendingDesiredStateAcrossUnavailableDevice = muted
             }
@@ -459,29 +527,33 @@ final class MicMuteController {
             return false
         }
 
-        if retryOnFailure {
-            setPendingDesiredState(muted, for: deviceID)
-        } else {
-            clearPendingDesiredState(for: deviceID)
+        setPendingDesiredState(muted, for: identity)
+        let accepted = applyMute(muted, to: identity)
+        guard identityStillMatches(identity) else {
+            publish(.unavailable)
+            return false
         }
-
-        let succeeded = applyMute(muted, to: deviceID)
         let actual = Self.readState(on: deviceID, using: hardware)
-        if succeeded, actual.mutedValue == muted {
-            clearPendingDesiredState(for: deviceID)
+        confirm(actual, desired: muted, identity: identity)
+        if !accepted, !retryOnFailure {
+            clearPendingDesiredState(forIdentifier: identity.key)
         }
         publish(actual)
-        return succeeded && actual.mutedValue == muted
+        return accepted
     }
 
     func prepareForSleep() {
-        guard let deviceID = currentDeviceID, ownsMute(on: deviceID) else { return }
-        setPendingDesiredState(true, for: deviceID)
+        guard let deviceID = currentDeviceID,
+              let identity = validatedIdentity(for: deviceID, mustRemainDefault: true),
+              ownsMute(identity)
+        else { return }
+        setPendingDesiredState(true, for: identity)
     }
 
     func handleWake() {
         if let deviceID = currentDeviceID,
-           ownsMute(on: deviceID) || pendingDesiredState(for: deviceID) == true {
+           let identity = validatedIdentity(for: deviceID, mustRemainDefault: true),
+           ownsMute(identity) || pendingDesiredStates[identity.key] == true {
             _ = setMuted(true, retryOnFailure: true)
         }
         retryPendingDesiredStates()
@@ -511,8 +583,9 @@ final class MicMuteController {
             }
             if oldIdentity?.matches == true,
                departingPendingState != true,
-               ownsMute(on: oldDeviceID),
-               !restoreAppOwnedMute(on: oldDeviceID) {
+               let identity = validatedIdentity(for: oldDeviceID, mustRemainDefault: false),
+               ownsMute(identity),
+               !restoreAppOwnedMute(identity) {
                 NSLog("MacMute: could not restore departing input device; restoration remains queued")
             } else if oldIdentity?.matches == false,
                       let key = oldIdentity?.key,
@@ -539,10 +612,12 @@ final class MicMuteController {
         }
         pendingDesiredStateAcrossUnavailableDevice = nil
         if let desiredState = desiredStateToCarry {
-            setPendingDesiredState(desiredState, for: newDeviceID)
-            let succeeded = applyMute(desiredState, to: newDeviceID)
-            if succeeded, Self.readState(on: newDeviceID, using: hardware).mutedValue == desiredState {
-                clearPendingDesiredState(for: newDeviceID)
+            if let identity = validatedIdentity(for: newDeviceID, mustRemainDefault: true) {
+                setPendingDesiredState(desiredState, for: identity)
+                let accepted = applyMute(desiredState, to: identity)
+                if accepted, identityStillMatches(identity) {
+                    confirm(Self.readState(on: newDeviceID, using: hardware), desired: desiredState, identity: identity)
+                }
             }
         }
         publish(Self.readState(on: newDeviceID, using: hardware))
@@ -557,11 +632,13 @@ final class MicMuteController {
             return
         }
         let actual = Self.readState(on: deviceID, using: hardware)
-        if let desired = pendingDesiredState(for: deviceID), actual.mutedValue == desired {
-            clearPendingDesiredState(for: deviceID)
-        }
-        if actual == .unmuted, pendingDesiredState(for: deviceID) != true {
-            removeAppMuteOwnership(for: deviceID)
+        if let identity = validatedIdentity(for: deviceID, mustRemainDefault: true) {
+            if let desired = pendingDesiredStates[identity.key] {
+                confirm(actual, desired: desired, identity: identity)
+            }
+            if actual == .unmuted, pendingDesiredStates[identity.key] != true {
+                removeAppMuteOwnership(identity)
+            }
         }
         publish(actual)
     }
@@ -572,26 +649,32 @@ final class MicMuteController {
         }
     }
 
-    private func applyMute(_ muted: Bool, to deviceID: AudioDeviceID) -> Bool {
+    private func applyMute(_ muted: Bool, to identity: DeviceIdentity) -> Bool {
+        guard identityStillMatches(identity) else { return false }
+        let deviceID = identity.deviceID
         let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
         let nativeMuteIsSettable = hasNativeMute && hardware.isMuteSettable(on: deviceID)
         if nativeMuteIsSettable {
             guard let current = hardware.readMute(on: deviceID) else { return false }
-            if current == muted {
-                if !muted {
-                    removeAppMuteOwnership(for: deviceID)
-                }
+            if current == muted, muted {
                 return true
             }
-            guard hardware.setMute(muted, on: deviceID),
-                  hardware.readMute(on: deviceID) == muted
-            else { return false }
-            if muted {
-                addAppMuteOwnership(for: deviceID)
-            } else {
-                removeAppMuteOwnership(for: deviceID)
+            if current != muted {
+                let alreadyOwned = ownsMute(identity)
+                if muted { addAppMuteOwnership(identity) }
+                guard identityStillMatches(identity), hardware.setMute(muted, on: deviceID) else {
+                    if muted, !alreadyOwned { removeAppMuteOwnership(identity) }
+                    return false
+                }
+                guard identityStillMatches(identity) else { return false }
+                return true
             }
-            return true
+            if let volumes = hardware.readVolumes(on: deviceID), Self.volumesAreMuted(volumes) {
+                // Continue so an explicit unmute also restores a fallback-zeroed volume.
+            } else {
+                removeAppMuteOwnership(identity)
+                return true
+            }
         }
 
         if hasNativeMute {
@@ -610,41 +693,43 @@ final class MicMuteController {
             if Self.volumesAreMuted(currentVolumes) {
                 return true
             }
-            savedVolumes[volumeKey(for: deviceID)] = currentVolumes
+            savedVolumes[identity.key] = currentVolumes
             persistSavedVolumes()
             let mutedVolumes = currentVolumes.mapValues { _ in Float32(0) }
-            guard hardware.setVolumes(mutedVolumes, on: deviceID),
-                  let verified = hardware.readVolumes(on: deviceID),
-                  Self.volumesAreMuted(verified)
-            else { return false }
-            addAppMuteOwnership(for: deviceID)
+            let alreadyOwned = ownsMute(identity)
+            addAppMuteOwnership(identity)
+            guard identityStillMatches(identity), hardware.setVolumes(mutedVolumes, on: deviceID) else {
+                if !alreadyOwned { removeAppMuteOwnership(identity) }
+                return false
+            }
+            guard identityStillMatches(identity) else { return false }
             return true
         }
 
         if !Self.volumesAreMuted(currentVolumes) {
-            removeAppMuteOwnership(for: deviceID)
+            removeAppMuteOwnership(identity)
             return true
         }
-        let restoredVolumes = savedVolumes[volumeKey(for: deviceID)]
-            ?? currentVolumes.mapValues { _ in defaultExplicitUnmuteVolume }
-        guard Set(restoredVolumes.keys) == Set(currentVolumes.keys),
-              hardware.setVolumes(restoredVolumes, on: deviceID),
-              let verified = hardware.readVolumes(on: deviceID),
-              Self.volumesMatch(verified, restoredVolumes)
-        else { return false }
-        removeAppMuteOwnership(for: deviceID)
+        let restoredVolumes = restorationVolumes(
+            saved: savedVolumes[identity.key],
+            current: currentVolumes
+        )
+        guard identityStillMatches(identity), hardware.setVolumes(restoredVolumes, on: deviceID) else { return false }
+        guard identityStillMatches(identity) else { return false }
+        savedVolumes[identity.key] = restoredVolumes
+        persistSavedVolumes()
         return true
     }
 
-    private func restoreAppOwnedMute(on deviceID: AudioDeviceID) -> Bool {
+    private func restoreAppOwnedMute(_ identity: DeviceIdentity) -> Bool {
+        guard identityStillMatches(identity) else { return false }
+        let deviceID = identity.deviceID
         let restored: Bool
         let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
         if hasNativeMute,
            hardware.isMuteSettable(on: deviceID),
            let currentlyMuted = hardware.readMute(on: deviceID) {
-            restored = !currentlyMuted
-                || (hardware.setMute(false, on: deviceID)
-                    && hardware.readMute(on: deviceID) == false)
+            restored = !currentlyMuted || hardware.setMute(false, on: deviceID)
         } else if hardware.isVolumeSettable(on: deviceID) {
             if hasNativeMute, hardware.readMute(on: deviceID) != false {
                 return false
@@ -652,37 +737,36 @@ final class MicMuteController {
             guard let currentVolumes = hardware.readVolumes(on: deviceID), !currentVolumes.isEmpty else {
                 return false
             }
-            let volumes = savedVolumes[volumeKey(for: deviceID)]
-                ?? currentVolumes.mapValues { _ in defaultExplicitUnmuteVolume }
+            let volumes = restorationVolumes(saved: savedVolumes[identity.key], current: currentVolumes)
             restored = !Self.volumesAreMuted(currentVolumes)
-                || (Set(volumes.keys) == Set(currentVolumes.keys)
-                    && hardware.setVolumes(volumes, on: deviceID)
-                    && hardware.readVolumes(on: deviceID).map { Self.volumesMatch($0, volumes) } == true)
+                || hardware.setVolumes(volumes, on: deviceID)
+            if restored {
+                savedVolumes[identity.key] = volumes
+                persistSavedVolumes()
+            }
         } else {
             restored = false
         }
-        if restored {
-            removeAppMuteOwnership(for: deviceID)
+        if restored, identityStillMatches(identity), Self.readState(on: deviceID, using: hardware) == .unmuted {
+            removeAppMuteOwnership(identity)
         }
         return restored
     }
 
-    private func ownsMute(on deviceID: AudioDeviceID) -> Bool {
-        appMutedDeviceIdentifiers.contains(volumeKey(for: deviceID))
+    private func ownsMute(_ identity: DeviceIdentity) -> Bool {
+        appMutedDeviceIdentifiers.contains(identity.key)
     }
 
-    private func addAppMuteOwnership(for deviceID: AudioDeviceID) {
-        let identifier = volumeKey(for: deviceID)
-        knownDeviceIDs[identifier] = deviceID
-        if appMutedDeviceIdentifiers.insert(identifier).inserted {
+    private func addAppMuteOwnership(_ identity: DeviceIdentity) {
+        knownDeviceIDs[identity.key] = identity.deviceID
+        if appMutedDeviceIdentifiers.insert(identity.key).inserted {
             persistAppMutedDeviceIdentifiers()
         }
     }
 
-    private func removeAppMuteOwnership(for deviceID: AudioDeviceID) {
-        let identifier = volumeKey(for: deviceID)
-        knownDeviceIDs[identifier] = deviceID
-        if appMutedDeviceIdentifiers.remove(identifier) != nil {
+    private func removeAppMuteOwnership(_ identity: DeviceIdentity) {
+        knownDeviceIDs[identity.key] = identity.deviceID
+        if appMutedDeviceIdentifiers.remove(identity.key) != nil {
             persistAppMutedDeviceIdentifiers()
         }
     }
@@ -697,19 +781,25 @@ final class MicMuteController {
             return deviceID
         }
         for deviceID in pending {
-            _ = restoreAppOwnedMute(on: deviceID)
+            if let identity = validatedIdentity(for: deviceID, mustRemainDefault: false) {
+                _ = restoreAppOwnedMute(identity)
+            }
         }
     }
 
     private func retryPendingDesiredStates() {
-        let pending = Array(pendingDesiredStates).compactMap { identifier, desired -> (AudioDeviceID, Bool)? in
+        let pending = Array(pendingDesiredStates).compactMap { identifier, desired -> (DeviceIdentity, Bool)? in
             guard let deviceID = validatedDeviceID(for: identifier) else { return nil }
-            return (deviceID, desired)
+            let mustRemainDefault = deviceID == currentDeviceID
+            guard let identity = validatedIdentity(for: deviceID, mustRemainDefault: mustRemainDefault),
+                  identity.key == identifier
+            else { return nil }
+            return (identity, desired)
         }
-        for (deviceID, desired) in pending {
-            let succeeded = applyMute(desired, to: deviceID)
-            if succeeded, Self.readState(on: deviceID, using: hardware).mutedValue == desired {
-                clearPendingDesiredState(for: deviceID)
+        for (identity, desired) in pending {
+            let accepted = applyMute(desired, to: identity)
+            if accepted, identityStillMatches(identity) {
+                confirm(Self.readState(on: identity.deviceID, using: hardware), desired: desired, identity: identity)
             }
         }
     }
@@ -735,11 +825,6 @@ final class MicMuteController {
             knownDeviceIDs[newKey] = deviceID
             return newKey
         }
-        if let cached = cachedDeviceIdentifiers[deviceID] {
-            let key = "uid:\(cached)"
-            knownDeviceIDs[key] = deviceID
-            return key
-        }
         let key = "session:\(deviceID)"
         knownDeviceIDs[key] = deviceID
         return key
@@ -749,7 +834,7 @@ final class MicMuteController {
         if let cached = cachedDeviceIdentifiers[deviceID] {
             let cachedKey = "uid:\(cached)"
             guard let live = hardware.persistentIdentifier(for: deviceID), !live.isEmpty else {
-                return (cachedKey, true)
+                return (cachedKey, false)
             }
             return (cachedKey, live == cached)
         }
@@ -766,13 +851,67 @@ final class MicMuteController {
 
     private func validatedDeviceID(for identifier: String) -> AudioDeviceID? {
         guard let deviceID = knownDeviceIDs[identifier] else { return nil }
-        guard volumeKey(for: deviceID) == identifier else {
+        let matches: Bool
+        if identifier.hasPrefix("uid:") {
+            matches = hardware.persistentIdentifier(for: deviceID).map { "uid:\($0)" } == identifier
+        } else {
+            matches = cachedDeviceIdentifiers[deviceID] == nil
+                && hardware.persistentIdentifier(for: deviceID) == nil
+                && identifier == "session:\(deviceID)"
+        }
+        guard matches else {
             if knownDeviceIDs[identifier] == deviceID {
                 knownDeviceIDs.removeValue(forKey: identifier)
             }
             return nil
         }
         return deviceID
+    }
+
+    private func validatedIdentity(
+        for deviceID: AudioDeviceID,
+        mustRemainDefault: Bool
+    ) -> DeviceIdentity? {
+        if mustRemainDefault, hardware.defaultInputDeviceID() != deviceID { return nil }
+        let validation = validatedCurrentIdentity(for: deviceID)
+        guard validation.matches else { return nil }
+        let identity = DeviceIdentity(
+            deviceID: deviceID,
+            key: validation.key,
+            mustRemainDefault: mustRemainDefault
+        )
+        return identityStillMatches(identity) ? identity : nil
+    }
+
+    private func identityStillMatches(_ identity: DeviceIdentity) -> Bool {
+        if identity.mustRemainDefault, hardware.defaultInputDeviceID() != identity.deviceID { return false }
+        if identity.key.hasPrefix("uid:") {
+            return hardware.persistentIdentifier(for: identity.deviceID).map { "uid:\($0)" } == identity.key
+        }
+        return cachedDeviceIdentifiers[identity.deviceID] == nil
+            && hardware.persistentIdentifier(for: identity.deviceID) == nil
+            && identity.key == "session:\(identity.deviceID)"
+    }
+
+    private func confirm(
+        _ actual: MicrophoneState,
+        desired: Bool,
+        identity: DeviceIdentity
+    ) {
+        guard actual.mutedValue == desired else { return }
+        clearPendingDesiredState(forIdentifier: identity.key)
+        if !desired {
+            removeAppMuteOwnership(identity)
+        }
+    }
+
+    private func restorationVolumes(
+        saved: InputVolumeSnapshot?,
+        current: InputVolumeSnapshot
+    ) -> InputVolumeSnapshot {
+        Dictionary(uniqueKeysWithValues: current.keys.map { element in
+            (element, saved?[element] ?? defaultExplicitUnmuteVolume)
+        })
     }
 
     private func migrateSessionState(for deviceID: AudioDeviceID, to persistentKey: String) {
@@ -806,20 +945,10 @@ final class MicMuteController {
         defaults.set(Array(persistent).sorted(), forKey: Self.appMutedDevicesDefaultsKey)
     }
 
-    private func pendingDesiredState(for deviceID: AudioDeviceID) -> Bool? {
-        pendingDesiredStates[volumeKey(for: deviceID)]
-    }
-
-    private func setPendingDesiredState(_ desired: Bool, for deviceID: AudioDeviceID) {
-        let identifier = volumeKey(for: deviceID)
-        knownDeviceIDs[identifier] = deviceID
-        pendingDesiredStates[identifier] = desired
+    private func setPendingDesiredState(_ desired: Bool, for identity: DeviceIdentity) {
+        knownDeviceIDs[identity.key] = identity.deviceID
+        pendingDesiredStates[identity.key] = desired
         persistPendingDesiredStates()
-    }
-
-    private func clearPendingDesiredState(for deviceID: AudioDeviceID) {
-        let identifier = volumeKey(for: deviceID)
-        clearPendingDesiredState(forIdentifier: identifier)
     }
 
     private func clearPendingDesiredState(forIdentifier identifier: String?) {
@@ -851,8 +980,8 @@ final class MicMuteController {
     private static func loadSavedVolumes(from defaults: UserDefaults) -> [String: InputVolumeSnapshot] {
         guard let values = defaults.dictionary(forKey: savedVolumesDefaultsKey) else { return [:] }
         return values.reduce(into: [:]) { result, pair in
-            guard pair.key.hasPrefix("uid:") else { return }
-            if let number = pair.value as? NSNumber {
+            guard isPersistentKey(pair.key) else { return }
+            if let number = validNumericValue(pair.value) {
                 let volume = number.floatValue
                 if volume.isFinite, volume > 0, volume <= 1 {
                     result[pair.key] = [0: volume]
@@ -860,9 +989,10 @@ final class MicMuteController {
                 return
             }
             guard let encoded = pair.value as? [String: Any] else { return }
-            let snapshot = encoded.reduce(into: InputVolumeSnapshot()) { snapshot, element in
+            var snapshot: InputVolumeSnapshot = [:]
+            for element in encoded {
                 guard let key = UInt32(element.key),
-                      let number = element.value as? NSNumber
+                      let number = validNumericValue(element.value)
                 else { return }
                 let volume = number.floatValue
                 guard volume.isFinite, volume >= 0, volume <= 1 else { return }
@@ -876,15 +1006,29 @@ final class MicMuteController {
 
     private static func loadAppMutedDeviceIdentifiers(from defaults: UserDefaults) -> Set<String> {
         let identifiers = defaults.array(forKey: appMutedDevicesDefaultsKey) as? [String] ?? []
-        return Set(identifiers.filter { $0.hasPrefix("uid:") && $0.count > 4 })
+        return Set(identifiers.filter(isPersistentKey))
     }
 
     private static func loadPendingDesiredStates(from defaults: UserDefaults) -> [String: Bool] {
         guard let values = defaults.dictionary(forKey: pendingDesiredStatesDefaultsKey) else { return [:] }
         return values.reduce(into: [:]) { result, pair in
-            guard pair.key.hasPrefix("uid:"), let number = pair.value as? NSNumber else { return }
+            guard isPersistentKey(pair.key),
+                  let number = pair.value as? NSNumber,
+                  CFGetTypeID(number) == CFBooleanGetTypeID()
+            else { return }
             result[pair.key] = number.boolValue
         }
+    }
+
+    private static func validNumericValue(_ value: Any) -> NSNumber? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID()
+        else { return nil }
+        return number
+    }
+
+    private static func isPersistentKey(_ key: String) -> Bool {
+        key.hasPrefix("uid:") && !key.dropFirst(4).isEmpty
     }
 
     private func observeWake() {
@@ -908,22 +1052,18 @@ final class MicMuteController {
         }
     }
 
-    private static func readState(
+    static func readState(
         on deviceID: AudioDeviceID,
         using hardware: AudioDeviceControlling
     ) -> MicrophoneState {
         let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
-        if hasNativeMute {
-            if let muted = hardware.readMute(on: deviceID) {
-                if muted { return .muted }
-                if hardware.isMuteSettable(on: deviceID) { return .unmuted }
-            } else if hardware.isMuteSettable(on: deviceID) {
-                return .unavailable
-            }
-        }
-        guard let volumes = hardware.readVolumes(on: deviceID), !volumes.isEmpty else { return .unavailable }
-        if Self.volumesAreMuted(volumes) { return .muted }
-        return hasNativeMute && hardware.readMute(on: deviceID) == nil ? .unavailable : .unmuted
+        let nativeMute = hasNativeMute ? hardware.readMute(on: deviceID) : nil
+        if nativeMute == true { return .muted }
+        let volumes = hardware.readVolumes(on: deviceID)
+        if let volumes, Self.volumesAreMuted(volumes) { return .muted }
+        if nativeMute == false { return .unmuted }
+        if !hasNativeMute, let volumes, !volumes.isEmpty { return .unmuted }
+        return .unavailable
     }
 
     private static func volumesAreMuted(_ volumes: InputVolumeSnapshot) -> Bool {

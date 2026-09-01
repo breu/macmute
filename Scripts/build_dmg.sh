@@ -17,8 +17,14 @@ BACKUP_APP_BUNDLE=""
 APP_REPLACED=0
 DMG_REPLACED=0
 PUBLISHED=0
+MOUNT_DIR=""
+DMG_MOUNTED=0
 
 cleanup() {
+    if [[ "${DMG_MOUNTED}" == "1" && -n "${MOUNT_DIR}" ]]; then
+        hdiutil detach "${MOUNT_DIR}" >/dev/null 2>&1 || true
+        DMG_MOUNTED=0
+    fi
     if [[ "${PUBLISHED}" != "1" ]]; then
         if [[ "${APP_REPLACED}" == "1" && -e "${APP_BUNDLE}" ]]; then
             rm -rf "${APP_BUNDLE}"
@@ -39,6 +45,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
+verify_installer_contents() {
+    local image="$1"
+    MOUNT_DIR="${WORK_DIR}/mounted"
+    mkdir -p "${MOUNT_DIR}"
+    hdiutil attach -readonly -nobrowse -mountpoint "${MOUNT_DIR}" "${image}" >/dev/null
+    DMG_MOUNTED=1
+    [[ -d "${MOUNT_DIR}/${APP_BUNDLE}" ]] || {
+        echo "error: installer is missing ${APP_BUNDLE}" >&2
+        return 1
+    }
+    [[ -L "${MOUNT_DIR}/Applications" && "$(readlink "${MOUNT_DIR}/Applications")" == "/Applications" ]] || {
+        echo "error: installer Applications link is missing or unsafe" >&2
+        return 1
+    }
+    codesign --verify --strict --verbose=2 "${MOUNT_DIR}/${APP_BUNDLE}"
+    lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64 x86_64
+    /usr/libexec/PlistBuddy -c "Print :MacMuteSourceRevision" \
+      "${MOUNT_DIR}/${APP_BUNDLE}/Contents/Info.plist" >/dev/null
+    hdiutil detach "${MOUNT_DIR}" >/dev/null
+    DMG_MOUNTED=0
+    rmdir "${MOUNT_DIR}"
+    MOUNT_DIR=""
+}
+
 if [[ "${RELEASE_BUILD}" != "0" && "${RELEASE_BUILD}" != "1" ]]; then
     echo "error: MACMUTE_RELEASE must be exactly 0 or 1" >&2
     exit 1
@@ -49,7 +79,7 @@ if [[ "${RELEASE_BUILD}" == "1" && -z "${NOTARY_PROFILE}" ]]; then
     exit 1
 fi
 
-WORK_DIR="$(mktemp -d "$(pwd)/.macmute-dmg-build.XXXXXX")"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/macmute-dmg-build.XXXXXX")"
 TEMP_APP_BUNDLE="${WORK_DIR}/${APP_BUNDLE}"
 STAGING_DIR="${WORK_DIR}/staging"
 
@@ -74,6 +104,8 @@ hdiutil create \
   -srcfolder "${STAGING_DIR}" \
   -ov -format UDZO \
   "${TEMP_DMG}"
+hdiutil verify "${TEMP_DMG}"
+verify_installer_contents "${TEMP_DMG}"
 
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
     echo "==> Signing installer with BreuSoftware LLC Developer ID"
@@ -86,6 +118,9 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
       --wait
     xcrun stapler staple "${TEMP_DMG}"
     xcrun stapler validate "${TEMP_DMG}"
+    codesign --verify --strict --verbose=2 "${TEMP_DMG}"
+    hdiutil verify "${TEMP_DMG}"
+    verify_installer_contents "${TEMP_DMG}"
     spctl --assess --type open --context context:primary-signature --verbose=2 "${TEMP_DMG}"
 fi
 

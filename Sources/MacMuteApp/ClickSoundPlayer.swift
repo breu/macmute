@@ -111,7 +111,7 @@ final class ClickSoundPlayer {
 
     /// Broadband noise gives the sharp transient "click" character; a fast-decaying
     /// low tone underneath gives it body/loudness so it isn't just a thin hiss.
-    private static func makeClickBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
+    static func makeClickBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
         let duration = 0.03
         let frameCount = AVAudioFrameCount(sampleRate * duration)
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
@@ -131,7 +131,7 @@ final class ClickSoundPlayer {
 
     /// Two clean rising tones (no noise) reads as a "mode switched" chirp rather than
     /// a mechanical click.
-    private static func makeModeChangeBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
+    static func makeModeChangeBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
         let noteDuration = 0.05
         let gap = 0.02
         let totalDuration = noteDuration * 2 + gap
