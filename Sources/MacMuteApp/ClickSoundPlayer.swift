@@ -4,6 +4,7 @@ import AVFoundation
 /// Plays a short synthesized "click" as feedback for hotkey-driven mic actions.
 /// Generated in-process rather than bundled as an audio asset, so there's nothing
 /// to ship or codesign alongside the binary.
+@MainActor
 final class ClickSoundPlayer {
 
     static let shared = ClickSoundPlayer()
@@ -63,9 +64,11 @@ final class ClickSoundPlayer {
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.rebuildGraph()
+        ) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task { @MainActor in
+                    ClickSoundPlayer.shared.rebuildGraph()
+                }
             }
         }
     }
@@ -79,8 +82,10 @@ final class ClickSoundPlayer {
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: .main
-        ) { [weak self] _ in
-            self?.startEngine()
+        ) { _ in
+            Task { @MainActor in
+                ClickSoundPlayer.shared.startEngine()
+            }
         }
     }
 
@@ -106,7 +111,7 @@ final class ClickSoundPlayer {
 
     /// Broadband noise gives the sharp transient "click" character; a fast-decaying
     /// low tone underneath gives it body/loudness so it isn't just a thin hiss.
-    private static func makeClickBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
+    static func makeClickBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
         let duration = 0.03
         let frameCount = AVAudioFrameCount(sampleRate * duration)
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
@@ -126,7 +131,7 @@ final class ClickSoundPlayer {
 
     /// Two clean rising tones (no noise) reads as a "mode switched" chirp rather than
     /// a mechanical click.
-    private static func makeModeChangeBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
+    static func makeModeChangeBuffer(format: AVAudioFormat, sampleRate: Double) -> AVAudioPCMBuffer {
         let noteDuration = 0.05
         let gap = 0.02
         let totalDuration = noteDuration * 2 + gap

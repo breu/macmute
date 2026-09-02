@@ -10,6 +10,10 @@ let package = Package(
         .executableTarget(
             name: "MacMuteApp",
             path: "Sources/MacMuteApp"
+        ),
+        .testTarget(
+            name: "MacMuteAppTests",
+            dependencies: ["MacMuteApp"]
         )
     ]
 )

@@ -12,6 +12,8 @@ DerivedData/
 /MacMute.app
 /MacMute-*.dmg
 /.dmg_staging
+/.macmute-app-build.*
+/.macmute-dmg-build.*
 
 # macOS
 .DS_Store
@@ -19,6 +21,8 @@ DerivedData/
 # Claude Code local settings (machine-specific permissions)
 .claude/settings.local.json
 
-dev.crt
-dev.p12
-dev.key
+# Never commit local signing material
+*.p12
+*.key
+*.cer
+*.crt

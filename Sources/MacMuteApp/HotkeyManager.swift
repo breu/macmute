@@ -1,9 +1,22 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import Carbon.HIToolbox
 import Foundation
 
-struct KeyboardShortcut: Equatable {
+extension Notification.Name {
+    static let macMuteHotkeyRegistrationDidChange = Notification.Name(
+        "MacMute.hotkeyRegistrationDidChange"
+    )
+}
+
+private extension Result {
+    var isSuccess: Bool {
+        if case .success = self { return true }
+        return false
+    }
+}
+
+struct KeyboardShortcut: Equatable, Sendable {
     var keyCode: UInt32
     var modifiers: UInt32
 
@@ -11,18 +24,22 @@ struct KeyboardShortcut: Equatable {
         keyCode: UInt32(kVK_ANSI_M),
         modifiers: UInt32(cmdKey | optionKey)
     )
-
-    /// Sentinel representing the standalone fn key, which has no Carbon modifier mask of its own.
     static let fn = KeyboardShortcut(keyCode: UInt32(kVK_Function), modifiers: 0)
 
     var isFn: Bool { keyCode == UInt32(kVK_Function) }
 
-    /// F13–F20 have no default system binding and aren't used for typing, so unlike
-    /// ordinary letter/number keys they're safe to bind standalone (no modifier required).
     static let standaloneFunctionKeyCodes: Set<UInt32> = [
         UInt32(kVK_F13), UInt32(kVK_F14), UInt32(kVK_F15), UInt32(kVK_F16),
         UInt32(kVK_F17), UInt32(kVK_F18), UInt32(kVK_F19), UInt32(kVK_F20)
     ]
+
+    private static let allowedModifiers = UInt32(controlKey | optionKey | shiftKey | cmdKey)
+
+    var isValid: Bool {
+        guard keyCode <= UInt32(UInt16.max), modifiers & ~Self.allowedModifiers == 0 else { return false }
+        if isFn { return modifiers == 0 }
+        return modifiers != 0 || Self.standaloneFunctionKeyCodes.contains(keyCode)
+    }
 
     var displayString: String {
         if isFn { return "fn" }
@@ -31,7 +48,7 @@ struct KeyboardShortcut: Equatable {
         if modifiers & UInt32(optionKey) != 0 { parts += "⌥" }
         if modifiers & UInt32(shiftKey) != 0 { parts += "⇧" }
         if modifiers & UInt32(cmdKey) != 0 { parts += "⌘" }
-        parts += KeyboardShortcut.keyName(for: keyCode)
+        parts += Self.keyName(for: keyCode)
         return parts
     }
 
@@ -55,69 +72,150 @@ struct KeyboardShortcut: Equatable {
     }
 }
 
-final class HotkeyManager {
+enum HotkeyRegistrationError: LocalizedError, Equatable {
+    case invalidShortcut
+    case eventHandlerUnavailable(OSStatus)
+    case shortcutUnavailable(OSStatus)
+    case accessibilityPermissionRequired
+    case monitorUnavailable
 
+    var errorDescription: String? {
+        switch self {
+        case .invalidShortcut:
+            "Use at least one modifier, fn alone, or F13–F20 alone."
+        case .eventHandlerUnavailable(let status):
+            "The system hotkey handler could not start (OSStatus \(status))."
+        case .shortcutUnavailable:
+            "That shortcut is already in use by macOS or another app."
+        case .accessibilityPermissionRequired:
+            "Grant Accessibility access, then choose fn again."
+        case .monitorUnavailable:
+            "The fn-key monitor could not start."
+        }
+    }
+}
+
+@MainActor
+final class HotkeyManager {
     static let shared = HotkeyManager()
 
     var onHotkeyDown: (() -> Void)?
     var onHotkeyUp: (() -> Void)?
+    var onHotkeyCancelled: (() -> Void)?
+    var onRegistrationError: ((HotkeyRegistrationError) -> Void)?
+    private(set) var lastRegistrationError: HotkeyRegistrationError?
 
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandlerRef: EventHandlerRef?
-    private let hotKeyID = EventHotKeyID(signature: OSType(0x4D4D5554), id: 1) // 'MMUT'
-
-    private var fnGlobalMonitor: Any?
-    private var fnLocalMonitor: Any?
-    private var fnKeyIsDown = false
-
-    private static let defaultsKey = "MacMute.shortcut"
-
-    private(set) var currentShortcut: KeyboardShortcut
-
-    private init() {
-        currentShortcut = Self.loadShortcut() ?? .default
-        installHandler()
-        register(shortcut: currentShortcut)
-        observeWake()
+    private enum Registration {
+        case carbon(reference: EventHotKeyRef, id: UInt32)
+        case functionKey(global: Any, local: Any)
+        case simulated
     }
 
-    /// The global NSEvent monitor backing the standalone fn key can silently stop
-    /// delivering events after the system sleeps, so it's torn down and reinstalled
-    /// on wake. Carbon's RegisterEventHotKey path isn't affected by sleep, so
-    /// non-fn shortcuts are left alone.
-    private func observeWake() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self, self.currentShortcut.isFn else { return }
-            self.unregisterFnMonitor()
-            self.registerFnMonitor()
+    private var activeRegistration: Registration?
+    private var eventHandlerRef: EventHandlerRef?
+    private let hotKeySignature = OSType(0x4D4D5554) // 'MMUT'
+    private var nextHotKeyID: UInt32 = 1
+    private var activeCarbonHotKeyID: UInt32?
+    private var fnKeyIsDown = false
+    private var hotkeyIsDown = false
+    private var registrationRetryTimer: Timer?
+    private var eventHandlerAvailable = false
+    private let defaults: UserDefaults
+    private let retryDelay: TimeInterval
+    private let installHandlerOverride: (() -> Result<Void, HotkeyRegistrationError>)?
+    private let registrationOverride: ((KeyboardShortcut) -> Result<Void, HotkeyRegistrationError>)?
+
+    private static let defaultsKey = "MacMute.shortcut"
+    private(set) var currentShortcut: KeyboardShortcut
+
+    init(
+        defaults: UserDefaults = .standard,
+        observesWake: Bool = true,
+        retryDelay: TimeInterval = 5,
+        installHandlerOverride: (() -> Result<Void, HotkeyRegistrationError>)? = nil,
+        registrationOverride: ((KeyboardShortcut) -> Result<Void, HotkeyRegistrationError>)? = nil
+    ) {
+        self.defaults = defaults
+        self.retryDelay = retryDelay
+        self.installHandlerOverride = installHandlerOverride
+        self.registrationOverride = registrationOverride
+        let saved = Self.loadShortcut(from: defaults)
+        if let saved, saved.isValid {
+            currentShortcut = saved
+        } else {
+            currentShortcut = .default
+        }
+
+        let handlerResult = installHandler()
+        if currentShortcut.isFn || handlerResult.isSuccess {
+            switch registerInitialShortcut(currentShortcut) {
+            case .success:
+                recordRegistrationSuccess()
+            case .failure(let error):
+                recordRegistrationError(error)
+                scheduleRegistrationRetry()
+            }
+        } else if case .failure(let error) = handlerResult {
+            recordRegistrationError(error)
+            scheduleRegistrationRetry()
+        }
+        if observesWake {
+            observeWake()
         }
     }
 
-    func updateShortcut(_ shortcut: KeyboardShortcut) {
-        unregister()
-        currentShortcut = shortcut
-        Self.saveShortcut(shortcut)
-        register(shortcut: shortcut)
+    var hasActiveRegistration: Bool { activeRegistration != nil }
+
+    @discardableResult
+    func updateShortcut(_ shortcut: KeyboardShortcut) -> Result<Void, HotkeyRegistrationError> {
+        guard shortcut.isValid else { return .failure(.invalidShortcut) }
+        if shortcut == currentShortcut, activeRegistration != nil { return .success(()) }
+        if !shortcut.isFn, !eventHandlerAvailable {
+            switch installHandler() {
+            case .success:
+                break
+            case .failure(let error):
+                recordRegistrationError(error)
+                return .failure(error)
+            }
+        }
+
+        switch makeRegistration(for: shortcut) {
+        case .success(let replacement):
+            if let activeRegistration {
+                cancelActivePress()
+                unregister(activeRegistration)
+            }
+            activate(replacement)
+            currentShortcut = shortcut
+            Self.saveShortcut(shortcut, to: defaults)
+            recordRegistrationSuccess()
+            return .success(())
+        case .failure(let error):
+            recordRegistrationError(error)
+            return .failure(error)
+        }
     }
 
-    private func installHandler() {
+    private func installHandler() -> Result<Void, HotkeyRegistrationError> {
+        if eventHandlerAvailable { return .success(()) }
+        if let installHandlerOverride {
+            let result = installHandlerOverride()
+            if result.isSuccess { eventHandlerAvailable = true }
+            return result
+        }
         var eventTypes = [
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
         ]
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-
-        InstallEventHandler(
+        let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, eventRef, userData in
-                guard let userData, let eventRef else { return noErr }
+                guard let userData, let eventRef else { return OSStatus(eventNotHandledErr) }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                 var receivedID = EventHotKeyID()
-                GetEventParameter(
+                let parameterStatus = GetEventParameter(
                     eventRef,
                     UInt32(kEventParamDirectObject),
                     UInt32(typeEventHotKeyID),
@@ -126,13 +224,16 @@ final class HotkeyManager {
                     nil,
                     &receivedID
                 )
-                guard receivedID.id == manager.hotKeyID.id else { return noErr }
-                let isDown = GetEventKind(eventRef) == UInt32(kEventHotKeyPressed)
-                DispatchQueue.main.async {
-                    if isDown {
-                        manager.onHotkeyDown?()
+                guard parameterStatus == noErr,
+                      receivedID.id == manager.activeCarbonHotKeyID,
+                      receivedID.signature == manager.hotKeySignature
+                else { return OSStatus(eventNotHandledErr) }
+
+                MainActor.assumeIsolated {
+                    if GetEventKind(eventRef) == UInt32(kEventHotKeyPressed) {
+                        manager.handleCarbonHotkeyEdge(isDown: true)
                     } else {
-                        manager.onHotkeyUp?()
+                        manager.handleCarbonHotkeyEdge(isDown: false)
                     }
                 }
                 return noErr
@@ -142,59 +243,113 @@ final class HotkeyManager {
             selfPtr,
             &eventHandlerRef
         )
+        if status == noErr {
+            eventHandlerAvailable = true
+            return .success(())
+        }
+        return .failure(.eventHandlerUnavailable(status))
     }
 
-    private func register(shortcut: KeyboardShortcut) {
-        if shortcut.isFn {
-            registerFnMonitor()
-            return
+    private func registerInitialShortcut(
+        _ shortcut: KeyboardShortcut
+    ) -> Result<Void, HotkeyRegistrationError> {
+        switch makeRegistration(for: shortcut) {
+        case .success(let registration):
+            activate(registration)
+            return .success(())
+        case .failure(let error):
+            return .failure(error)
         }
-        RegisterEventHotKey(
+    }
+
+    private func makeRegistration(
+        for shortcut: KeyboardShortcut
+    ) -> Result<Registration, HotkeyRegistrationError> {
+        if !shortcut.isFn, !eventHandlerAvailable {
+            return .failure(.eventHandlerUnavailable(OSStatus(eventNotHandledErr)))
+        }
+        if let registrationOverride {
+            return registrationOverride(shortcut).map { .simulated }
+        }
+        if shortcut.isFn {
+            return makeFunctionKeyRegistration(promptForPermission: true)
+        }
+
+        let numericID = nextHotKeyID
+        nextHotKeyID &+= 1
+        var reference: EventHotKeyRef?
+        let status = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.modifiers,
-            hotKeyID,
+            EventHotKeyID(signature: hotKeySignature, id: numericID),
             GetApplicationEventTarget(),
             0,
-            &hotKeyRef
+            &reference
         )
-    }
-
-    private func unregister() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
+        guard status == noErr, let reference else {
+            return .failure(.shortcutUnavailable(status))
         }
-        unregisterFnMonitor()
+        return .success(.carbon(reference: reference, id: numericID))
     }
 
-    // MARK: - Standalone fn key
-
-    /// fn has no Carbon modifier mask, so it can't go through RegisterEventHotKey.
-    /// Instead we watch flagsChanged globally (requires Accessibility permission) and
-    /// locally (so it also fires while MacMute's own windows are focused).
-    private func registerFnMonitor() {
-        Self.requestAccessibilityPermissionIfNeeded()
+    private func makeFunctionKeyRegistration(
+        promptForPermission: Bool
+    ) -> Result<Registration, HotkeyRegistrationError> {
+        guard Self.hasAccessibilityPermission(prompt: promptForPermission) else {
+            return .failure(.accessibilityPermissionRequired)
+        }
         fnKeyIsDown = false
-        fnGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleFnFlagsChanged(event)
+        guard let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleFnFlagsChanged(event)
+            }
+        }) else {
+            return .failure(.monitorUnavailable)
         }
-        fnLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleFnFlagsChanged(event)
+        guard let local = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleFnFlagsChanged(event)
+            }
             return event
+        }) else {
+            NSEvent.removeMonitor(global)
+            return .failure(.monitorUnavailable)
+        }
+        return .success(.functionKey(global: global, local: local))
+    }
+
+    private func unregister(_ registration: Registration) {
+        switch registration {
+        case .carbon(let reference, _):
+            let status = UnregisterEventHotKey(reference)
+            if status != noErr {
+                NSLog("MacMute: failed to unregister hotkey (OSStatus %d)", status)
+            }
+        case .functionKey(let global, let local):
+            NSEvent.removeMonitor(global)
+            NSEvent.removeMonitor(local)
+        case .simulated:
+            break
         }
     }
 
-    private func unregisterFnMonitor() {
-        if let fnGlobalMonitor { NSEvent.removeMonitor(fnGlobalMonitor) }
-        if let fnLocalMonitor { NSEvent.removeMonitor(fnLocalMonitor) }
-        fnGlobalMonitor = nil
-        fnLocalMonitor = nil
+    private func activate(_ registration: Registration) {
+        activeRegistration = registration
+        switch registration {
+        case .carbon(_, let id):
+            activeCarbonHotKeyID = id
+        case .functionKey:
+            activeCarbonHotKeyID = nil
+        case .simulated:
+            activeCarbonHotKeyID = nil
+        }
     }
 
     private func handleFnFlagsChanged(_ event: NSEvent) {
         let isDown = event.modifierFlags.contains(.function)
         guard isDown != fnKeyIsDown else { return }
         fnKeyIsDown = isDown
+        hotkeyIsDown = isDown
         if isDown {
             onHotkeyDown?()
         } else {
@@ -202,22 +357,135 @@ final class HotkeyManager {
         }
     }
 
-    static func requestAccessibilityPermissionIfNeeded() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+    func handleCarbonHotkeyEdge(isDown: Bool) {
+        guard isDown != hotkeyIsDown else { return }
+        hotkeyIsDown = isDown
+        if isDown {
+            onHotkeyDown?()
+        } else {
+            onHotkeyUp?()
+        }
     }
 
-    private static func loadShortcut() -> KeyboardShortcut? {
-        let defaults = UserDefaults.standard
-        guard let dict = defaults.dictionary(forKey: defaultsKey),
-              let keyCode = dict["keyCode"] as? UInt32 ?? (dict["keyCode"] as? Int).map(UInt32.init),
-              let modifiers = dict["modifiers"] as? UInt32 ?? (dict["modifiers"] as? Int).map(UInt32.init)
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleWake()
+            }
+        }
+    }
+
+    func handleWake() {
+        cancelActivePress()
+        guard currentShortcut.isFn else { return }
+        if let activeRegistration {
+            unregister(activeRegistration)
+            self.activeRegistration = nil
+            activeCarbonHotKeyID = nil
+        }
+        switch makeFunctionKeyRegistration(promptForPermission: false) {
+        case .success(let registration):
+            activate(registration)
+            recordRegistrationSuccess()
+        case .failure(let error):
+            recordRegistrationError(error)
+            scheduleRegistrationRetry()
+        }
+    }
+
+    private func cancelActivePress() {
+        guard hotkeyIsDown || fnKeyIsDown else { return }
+        hotkeyIsDown = false
+        fnKeyIsDown = false
+        onHotkeyCancelled?()
+    }
+
+    private func recordRegistrationError(_ error: HotkeyRegistrationError) {
+        lastRegistrationError = error
+        NSLog("MacMute: %@", error.localizedDescription)
+        onRegistrationError?(error)
+        NotificationCenter.default.post(name: .macMuteHotkeyRegistrationDidChange, object: nil)
+    }
+
+    private func recordRegistrationSuccess() {
+        registrationRetryTimer?.invalidate()
+        registrationRetryTimer = nil
+        lastRegistrationError = nil
+        NotificationCenter.default.post(name: .macMuteHotkeyRegistrationDidChange, object: nil)
+    }
+
+    private func scheduleRegistrationRetry() {
+        guard activeRegistration == nil, registrationRetryTimer == nil else { return }
+        let timer = Timer(timeInterval: retryDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.registrationRetryTimer = nil
+                self.retryRegistrationNow()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        registrationRetryTimer = timer
+    }
+
+    func retryRegistrationNow() {
+        guard activeRegistration == nil else { return }
+        if !currentShortcut.isFn {
+            switch installHandler() {
+            case .success:
+                break
+            case .failure(let error):
+                recordRegistrationError(error)
+                scheduleRegistrationRetry()
+                return
+            }
+        }
+        let result: Result<Registration, HotkeyRegistrationError>
+        if currentShortcut.isFn, registrationOverride == nil {
+            result = makeFunctionKeyRegistration(promptForPermission: false)
+        } else {
+            result = makeRegistration(for: currentShortcut)
+        }
+        switch result {
+        case .success(let registration):
+            activate(registration)
+            recordRegistrationSuccess()
+        case .failure(let error):
+            recordRegistrationError(error)
+            scheduleRegistrationRetry()
+        }
+    }
+
+    static func hasAccessibilityPermission(prompt: Bool) -> Bool {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        return AXIsProcessTrustedWithOptions([promptKey: prompt] as CFDictionary)
+    }
+
+    private static func loadShortcut(from defaults: UserDefaults) -> KeyboardShortcut? {
+        guard let dict = defaults.dictionary(forKey: defaultsKey) else { return nil }
+        return decodeShortcut(from: dict)
+    }
+
+    static func decodeShortcut(from dictionary: [String: Any]) -> KeyboardShortcut? {
+        guard let keyCode = exactUInt32(dictionary["keyCode"]),
+              let modifiers = exactUInt32(dictionary["modifiers"])
         else { return nil }
-        return KeyboardShortcut(keyCode: keyCode, modifiers: modifiers)
+        let shortcut = KeyboardShortcut(keyCode: keyCode, modifiers: modifiers)
+        return shortcut.isValid ? shortcut : nil
     }
 
-    private static func saveShortcut(_ shortcut: KeyboardShortcut) {
-        UserDefaults.standard.set(
+    private static func exactUInt32(_ value: Any?) -> UInt32? {
+        if let value = value as? UInt32 { return value }
+        if let value = value as? Int { return UInt32(exactly: value) }
+        if let value = value as? NSNumber { return UInt32(value.stringValue) }
+        return nil
+    }
+
+    private static func saveShortcut(_ shortcut: KeyboardShortcut, to defaults: UserDefaults) {
+        defaults.set(
             ["keyCode": Int(shortcut.keyCode), "modifiers": Int(shortcut.modifiers)],
             forKey: defaultsKey
         )

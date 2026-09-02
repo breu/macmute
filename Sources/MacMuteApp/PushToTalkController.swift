@@ -7,113 +7,146 @@ enum HotkeyMode: String {
 
     var displayName: String {
         switch self {
-        case .pushToMute: return "Push to Mute"
-        case .pushToUnmute: return "Push to Unmute"
+        case .pushToMute: "Push to Mute"
+        case .pushToUnmute: "Push to Unmute"
         }
     }
 
-    /// The muted state this mode's action puts the mic into.
-    var targetMutedState: Bool {
-        self == .pushToMute
-    }
-
-    /// The mic's resting/baseline state while this mode is active — the opposite of
-    /// what the mode's action produces, since the action is what "pushes" away from it.
-    var restingMutedState: Bool {
-        self == .pushToUnmute
-    }
+    var targetMutedState: Bool { self == .pushToMute }
+    var restingMutedState: Bool { self == .pushToUnmute }
 }
 
-/// Interprets the global hotkey's down/up edges as a tap, a double-click, or a hold:
-/// - Double-click toggles the mode.
-/// - A single tap performs the current mode's action and leaves it.
-/// - A hold performs the mode's action while held, then reverts to the prior mic state on release.
+/// Interprets the global hotkey's down/up edges as a tap, a double-click, or a hold.
+/// Launching only observes microphone state; it never applies a mode-derived state.
+@MainActor
 final class PushToTalkController {
-
-    static let shared = PushToTalkController()
+    static let shared = PushToTalkController(
+        micController: .shared,
+        hotkeyManager: .shared
+    )
 
     private(set) var mode: HotkeyMode
     var onModeChanged: ((HotkeyMode) -> Void)?
 
+    private let micController: MicMuteController
+    private let playsFeedback: Bool
     private let holdThreshold: TimeInterval = 0.2
-    /// Keyboard taps run slower than mouse clicks, so floor the system's double-click
-    /// speed setting rather than using it as-is — respects a user who's set it slower,
-    /// but doesn't inherit an unreasonably tight value from a fast mouse-click setting.
-    private let doubleClickWindow: TimeInterval = max(NSEvent.doubleClickInterval, 0.5)
+    private let doubleClickWindow: TimeInterval
 
     private var holdTimer: Timer?
     private var pendingTapTimer: Timer?
     private var tapCount = 0
     private var isHoldActive = false
+    private var holdAttemptFailed = false
     private var micStateBeforeHold: Bool?
 
     private static let defaultsKey = "MacMute.hotkeyMode"
 
-    private init() {
-        mode = Self.loadMode() ?? .pushToMute
-        MicMuteController.shared.setMuted(mode.restingMutedState)
-        HotkeyManager.shared.onHotkeyDown = { [weak self] in self?.handleDown() }
-        HotkeyManager.shared.onHotkeyUp = { [weak self] in self?.handleUp() }
-        observeWake()
-    }
+    init(
+        micController: MicMuteController,
+        hotkeyManager: HotkeyManager? = nil,
+        playsFeedback: Bool = true,
+        observesWake: Bool = true,
+        initialMode: HotkeyMode? = nil,
+        doubleClickWindow: TimeInterval = max(NSEvent.doubleClickInterval, 0.5)
+    ) {
+        self.micController = micController
+        self.playsFeedback = playsFeedback
+        self.doubleClickWindow = doubleClickWindow
+        mode = initialMode ?? Self.loadMode() ?? .pushToMute
 
-    /// Sleep can strand this state machine mid-gesture (e.g. a tap pending its
-    /// double-tap window, or a hold whose release never arrived), so it's reset
-    /// to a clean slate on wake rather than trusting leftover timers/counters.
-    private func observeWake() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.resetGestureState()
+        hotkeyManager?.onHotkeyDown = { [weak self] in self?.handleDown() }
+        hotkeyManager?.onHotkeyUp = { [weak self] in self?.handleUp() }
+        hotkeyManager?.onHotkeyCancelled = { [weak self] in self?.cancelActiveGesture() }
+        if observesWake {
+            observeWake()
         }
     }
 
-    private func resetGestureState() {
-        holdTimer?.invalidate()
-        holdTimer = nil
-        pendingTapTimer?.invalidate()
-        pendingTapTimer = nil
-        tapCount = 0
-        isHoldActive = false
-        micStateBeforeHold = nil
-    }
-
-    private func handleDown() {
-        isHoldActive = false
-        holdTimer?.invalidate()
+    func handleDown() {
+        guard holdTimer == nil, !isHoldActive else { return }
+        holdAttemptFailed = false
         let timer = Timer(timeInterval: holdThreshold, repeats: false) { [weak self] _ in
-            self?.beginHold()
+            MainActor.assumeIsolated {
+                self?.beginHold()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         holdTimer = timer
     }
 
-    private func handleUp() {
+    func handleUp() {
         holdTimer?.invalidate()
         holdTimer = nil
 
         if isHoldActive {
-            isHoldActive = false
-            if let prior = micStateBeforeHold {
-                ClickSoundPlayer.shared.play()
-                MicMuteController.shared.setMuted(prior)
-            }
-            micStateBeforeHold = nil
+            restoreActiveHold()
             return
         }
-
+        if holdAttemptFailed {
+            holdAttemptFailed = false
+            return
+        }
         registerTap()
     }
 
-    private func beginHold() {
-        isHoldActive = true
+    func beginHold() {
+        holdTimer?.invalidate()
+        holdTimer = nil
         pendingTapTimer?.invalidate()
         pendingTapTimer = nil
         tapCount = 0
-        micStateBeforeHold = MicMuteController.shared.isMuted
-        applyModeAction()
+
+        micController.refreshState()
+        guard let prior = micController.state.mutedValue else {
+            holdAttemptFailed = true
+            return
+        }
+        micStateBeforeHold = prior
+        guard applyModeAction() else {
+            micStateBeforeHold = nil
+            holdAttemptFailed = true
+            return
+        }
+        isHoldActive = true
+    }
+
+    func handleWake() {
+        if isHoldActive {
+            restoreActiveHold()
+        }
+        clearGestureState()
+    }
+
+    func prepareForTermination() {
+        if isHoldActive {
+            restoreActiveHold()
+        }
+        clearGestureState()
+    }
+
+    func cancelActiveGesture() {
+        if isHoldActive {
+            restoreActiveHold()
+        }
+        clearGestureState()
+    }
+
+    @discardableResult
+    func setMode(_ newMode: HotkeyMode) -> Bool {
+        guard newMode != mode else { return true }
+        if isHoldActive {
+            guard restoreActiveHold() else {
+                clearGestureState()
+                return false
+            }
+        }
+        clearGestureState()
+        guard micController.setMuted(newMode.restingMutedState) else { return false }
+        mode = newMode
+        Self.saveMode(mode)
+        onModeChanged?(mode)
+        return true
     }
 
     private func registerTap() {
@@ -128,7 +161,9 @@ final class PushToTalkController {
 
         pendingTapTimer?.invalidate()
         let timer = Timer(timeInterval: doubleClickWindow, repeats: false) { [weak self] _ in
-            self?.resolveSingleTap()
+            MainActor.assumeIsolated {
+                self?.resolveSingleTap()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         pendingTapTimer = timer
@@ -138,25 +173,58 @@ final class PushToTalkController {
         guard tapCount == 1 else { return }
         tapCount = 0
         pendingTapTimer = nil
-        applyModeAction()
+        _ = applyModeAction()
     }
 
-    private func applyModeAction() {
-        ClickSoundPlayer.shared.play()
-        MicMuteController.shared.setMuted(mode.targetMutedState)
+    @discardableResult
+    private func applyModeAction() -> Bool {
+        let succeeded = micController.setMuted(mode.targetMutedState)
+        if succeeded, playsFeedback {
+            ClickSoundPlayer.shared.play()
+        }
+        return succeeded
     }
 
-    func setMode(_ newMode: HotkeyMode) {
-        guard newMode != mode else { return }
-        mode = newMode
-        Self.saveMode(mode)
-        MicMuteController.shared.setMuted(mode.restingMutedState)
-        onModeChanged?(mode)
+    @discardableResult
+    private func restoreActiveHold() -> Bool {
+        isHoldActive = false
+        guard let prior = micStateBeforeHold else { return true }
+        let succeeded = micController.setMuted(prior, retryOnFailure: true)
+        if succeeded, playsFeedback {
+            ClickSoundPlayer.shared.play()
+        }
+        micStateBeforeHold = nil
+        return succeeded
+    }
+
+    private func clearGestureState() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+        pendingTapTimer?.invalidate()
+        pendingTapTimer = nil
+        tapCount = 0
+        isHoldActive = false
+        holdAttemptFailed = false
+        micStateBeforeHold = nil
     }
 
     private func toggleMode() {
-        ClickSoundPlayer.shared.playModeChange()
-        setMode(mode == .pushToMute ? .pushToUnmute : .pushToMute)
+        let changed = setMode(mode == .pushToMute ? .pushToUnmute : .pushToMute)
+        if changed, playsFeedback {
+            ClickSoundPlayer.shared.playModeChange()
+        }
+    }
+
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleWake()
+            }
+        }
     }
 
     private static func loadMode() -> HotkeyMode? {
