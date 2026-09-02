@@ -142,6 +142,11 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(log.components(separatedBy: "hdiutil attach").count - 1, 2)
         XCTAssertTrue(log.contains("xcrun notarytool submit"))
         XCTAssertTrue(log.contains("xcrun stapler staple"))
+        let notaryRange = try XCTUnwrap(log.range(of: "xcrun notarytool submit"))
+        let appAssessmentRange = try XCTUnwrap(log.range(of: "spctl --assess --type execute"))
+        let imageAssessmentRange = try XCTUnwrap(log.range(of: "spctl --assess --type open"))
+        XCTAssertLessThan(notaryRange.lowerBound, appAssessmentRange.lowerBound)
+        XCTAssertLessThan(appAssessmentRange.lowerBound, imageAssessmentRange.lowerBound)
         XCTAssertGreaterThanOrEqual(log.components(separatedBy: "hdiutil verify").count - 1, 2)
         let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
         XCTAssertEqual(plist?["MacMuteSourceRevision"] as? String, ReleaseFixture.sourceRevision)
@@ -188,6 +193,18 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertEqual(result.status, 0, result.output)
         let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
         XCTAssertEqual(plist?["MacMuteSourceRevision"] as? String, "\(ReleaseFixture.sourceRevision)-dirty")
+    }
+
+    func testReleaseFixtureRemovesOuterReleaseRoutingVariables() {
+        let environment = ReleaseFixture.sanitizedBaseEnvironment([
+            "MACMUTE_APP_OUTPUT": "/tmp/outer.app",
+            "MACMUTE_TEAM_ID": "OUTER12345",
+            "PATH": "/usr/bin",
+        ])
+
+        XCTAssertNil(environment["MACMUTE_APP_OUTPUT"])
+        XCTAssertNil(environment["MACMUTE_TEAM_ID"])
+        XCTAssertEqual(environment["PATH"], "/usr/bin")
     }
 
     func testNotaryFailurePreservesPreviousArtifacts() throws {
@@ -345,7 +362,7 @@ private final class ReleaseFixture {
         _ relativePath: String,
         extraEnvironment: [String: String] = [:]
     ) throws -> (status: Int32, output: String) {
-        var environment = ProcessInfo.processInfo.environment
+        var environment = Self.sanitizedBaseEnvironment(ProcessInfo.processInfo.environment)
         environment["PATH"] = "\(binURL.path):/usr/bin:/bin:/usr/sbin:/sbin"
         environment["MACMUTE_RELEASE"] = "1"
         environment["MACMUTE_SIGNING_IDENTITY"] = "Developer ID Application: BreuSoftware LLC (\(Self.teamID))"
@@ -362,6 +379,15 @@ private final class ReleaseFixture {
             directory: root,
             environment: environment
         )
+    }
+
+    fileprivate static func sanitizedBaseEnvironment(
+        _ environment: [String: String]
+    ) -> [String: String] {
+        var environment = environment
+        environment.removeValue(forKey: "MACMUTE_APP_OUTPUT")
+        environment.removeValue(forKey: "MACMUTE_TEAM_ID")
+        return environment
     }
 
     func installPreviousArtifacts() throws {

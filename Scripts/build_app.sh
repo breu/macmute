@@ -148,7 +148,6 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
         echo "error: signed app TeamIdentifier '${ACTUAL_TEAM_ID}' does not match MACMUTE_TEAM_ID" >&2
         exit 1
     fi
-    spctl --assess --type execute --verbose=2 "${TEMP_APP_BUNDLE}"
 fi
 
 echo "==> Publishing ${APP_BUNDLE}"

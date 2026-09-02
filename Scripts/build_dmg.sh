@@ -47,6 +47,7 @@ trap cleanup EXIT
 
 verify_installer_contents() {
     local image="$1"
+    local assess_gatekeeper="${2:-0}"
     MOUNT_DIR="${WORK_DIR}/mounted"
     mkdir -p "${MOUNT_DIR}"
     hdiutil attach -readonly -nobrowse -mountpoint "${MOUNT_DIR}" "${image}" >/dev/null
@@ -60,6 +61,9 @@ verify_installer_contents() {
         return 1
     }
     codesign --verify --strict --verbose=2 "${MOUNT_DIR}/${APP_BUNDLE}"
+    if [[ "${assess_gatekeeper}" == "1" ]]; then
+        spctl --assess --type execute --verbose=2 "${MOUNT_DIR}/${APP_BUNDLE}"
+    fi
     lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64 x86_64
     /usr/libexec/PlistBuddy -c "Print :MacMuteSourceRevision" \
       "${MOUNT_DIR}/${APP_BUNDLE}/Contents/Info.plist" >/dev/null
@@ -120,7 +124,7 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
     xcrun stapler validate "${TEMP_DMG}"
     codesign --verify --strict --verbose=2 "${TEMP_DMG}"
     hdiutil verify "${TEMP_DMG}"
-    verify_installer_contents "${TEMP_DMG}"
+    verify_installer_contents "${TEMP_DMG}" 1
     spctl --assess --type open --context context:primary-signature --verbose=2 "${TEMP_DMG}"
 fi
 
