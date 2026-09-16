@@ -10,7 +10,7 @@ final class PreferencesWindowController: NSWindowController {
         let window = NSWindow(contentViewController: hostingController)
         window.title = "MacMute Preferences"
         window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 320, height: 190))
+        window.setContentSize(NSSize(width: 320, height: 220))
         self.init(window: window)
     }
 
@@ -25,6 +25,7 @@ private struct PreferencesView: View {
     @State private var shortcutDisplay = HotkeyManager.shared.currentShortcut.displayString
     @State private var isRecording = false
     @State private var launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
+    @State private var useColoredIcon = IconPreferences.shared.useColoredIcon
 
     @State private var recorder = ShortcutRecorder()
 
@@ -61,10 +62,15 @@ private struct PreferencesView: View {
                     LaunchAtLoginManager.shared.setEnabled(newValue)
                 }
 
+            Toggle("Use Colored Icon", isOn: $useColoredIcon)
+                .onChange(of: useColoredIcon) { newValue in
+                    IconPreferences.shared.setUseColoredIcon(newValue)
+                }
+
             Spacer()
         }
         .padding(20)
-        .frame(width: 320, height: 190)
+        .frame(width: 320, height: 220)
     }
 
     private func startRecording() {

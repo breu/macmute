@@ -23,12 +23,27 @@ final class StatusBarController {
         pushToTalk.onModeChanged = { [weak self] _ in
             self?.updateModeMenuItemStates()
         }
+        IconPreferences.shared.onChange = { [weak self] in
+            guard let self else { return }
+            self.updateIcon(muted: self.muteController.isMuted)
+        }
         updateIcon(muted: muteController.isMuted)
     }
 
     private func configureButton() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(systemSymbolName: unmutedSymbol, accessibilityDescription: "Microphone")
+        button.image = coloredIcon(symbolName: unmutedSymbol, color: .systemGreen, accessibilityDescription: "Microphone")
+    }
+
+    private func coloredIcon(symbolName: String, color: NSColor, accessibilityDescription: String) -> NSImage? {
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription) else { return nil }
+        guard IconPreferences.shared.useColoredIcon else {
+            image.isTemplate = true
+            return image
+        }
+        let coloredImage = image.withSymbolConfiguration(.init(paletteColors: [color]))
+        coloredImage?.isTemplate = false
+        return coloredImage
     }
 
     private func configureMenu() {
@@ -106,7 +121,7 @@ final class StatusBarController {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "MacMute",
-            .applicationVersion: "1.3",
+            .applicationVersion: "1.4",
             .credits: NSAttributedString(string: "Mutes your Mac's system microphone system-wide, at the hardware level.\n\nWritten by Joe Breu.")
         ])
     }
@@ -116,8 +131,9 @@ final class StatusBarController {
     }
 
     private func updateIcon(muted: Bool) {
-        statusItem.button?.image = NSImage(
-            systemSymbolName: muted ? mutedSymbol : unmutedSymbol,
+        statusItem.button?.image = coloredIcon(
+            symbolName: muted ? mutedSymbol : unmutedSymbol,
+            color: muted ? .systemRed : .systemGreen,
             accessibilityDescription: muted ? "Microphone muted" : "Microphone unmuted"
         )
     }
