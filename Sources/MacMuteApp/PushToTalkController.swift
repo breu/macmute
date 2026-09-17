@@ -51,7 +51,9 @@ final class PushToTalkController {
 
     private init() {
         mode = Self.loadMode() ?? .pushToMute
-        MicMuteController.shared.setMuted(mode.restingMutedState)
+        // Deliberately does not force the mic to this mode's resting state here —
+        // MicMuteController already started from the mic's actual hardware state,
+        // and overriding it at launch would clobber a mute the user set before quitting.
         HotkeyManager.shared.onHotkeyDown = { [weak self] in self?.handleDown() }
         HotkeyManager.shared.onHotkeyUp = { [weak self] in self?.handleUp() }
         observeWake()
@@ -76,6 +78,12 @@ final class PushToTalkController {
         pendingTapTimer?.invalidate()
         pendingTapTimer = nil
         tapCount = 0
+        // A hold's key-up can be lost across sleep, leaving the mic stuck in the
+        // hold's temporary state forever since nothing else will restore it —
+        // so restore it here before discarding the saved state.
+        if isHoldActive, let prior = micStateBeforeHold {
+            MicMuteController.shared.setMuted(prior)
+        }
         isHoldActive = false
         micStateBeforeHold = nil
     }

@@ -10,7 +10,8 @@ final class LaunchAtLoginManager {
         SMAppService.mainApp.status == .enabled
     }
 
-    func setEnabled(_ enabled: Bool) {
+    @discardableResult
+    func setEnabled(_ enabled: Bool) -> Bool {
         do {
             if enabled {
                 if SMAppService.mainApp.status != .enabled {
@@ -21,8 +22,10 @@ final class LaunchAtLoginManager {
                     try SMAppService.mainApp.unregister()
                 }
             }
+            return true
         } catch {
-            NSLog("MacMute: failed to update launch-at-login state: \(error)")
+            print("MacMute: failed to update launch-at-login state: \(error)")
+            return false
         }
     }
 }

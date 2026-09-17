@@ -2,22 +2,33 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-final class PreferencesWindowController: NSWindowController {
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
+
+    private var recorder: ShortcutRecorder?
 
     convenience init() {
-        let view = PreferencesView()
+        let recorder = ShortcutRecorder()
+        let view = PreferencesView(recorder: recorder)
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "MacMute Preferences"
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 320, height: 220))
         self.init(window: window)
+        self.recorder = recorder
+        window.delegate = self
     }
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Abandons an in-progress recording rather than leaving its monitors
+    /// installed app-wide after the window that started it is gone.
+    func windowWillClose(_ notification: Notification) {
+        recorder?.cancel()
     }
 }
 
@@ -27,7 +38,7 @@ private struct PreferencesView: View {
     @State private var launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
     @State private var useColoredIcon = IconPreferences.shared.useColoredIcon
 
-    @State private var recorder = ShortcutRecorder()
+    let recorder: ShortcutRecorder
 
     private static let raptorIcon: NSImage? = {
         guard let path = Bundle.main.path(forResource: "RaptorIcon", ofType: "png") else { return nil }
@@ -59,7 +70,12 @@ private struct PreferencesView: View {
 
             Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
                 .onChange(of: launchAtLoginEnabled) { newValue in
-                    LaunchAtLoginManager.shared.setEnabled(newValue)
+                    if !LaunchAtLoginManager.shared.setEnabled(newValue) {
+                        // Registration/unregistration failed — resync the toggle
+                        // to the actual system state rather than leaving it
+                        // showing a change that never took effect.
+                        launchAtLoginEnabled = LaunchAtLoginManager.shared.isEnabled
+                    }
                 }
 
             Toggle("Use Colored Icon", isOn: $useColoredIcon)
@@ -76,8 +92,15 @@ private struct PreferencesView: View {
     private func startRecording() {
         isRecording = true
         recorder.record { shortcut in
-            HotkeyManager.shared.updateShortcut(shortcut)
-            shortcutDisplay = shortcut.displayString
+            if HotkeyManager.shared.updateShortcut(shortcut) {
+                shortcutDisplay = shortcut.displayString
+            } else {
+                // Registration failed (conflict, or fn without Accessibility
+                // trust) — the prior working shortcut is still active, so
+                // leave the displayed label matching it rather than the
+                // shortcut that didn't take effect.
+                shortcutDisplay = HotkeyManager.shared.currentShortcut.displayString
+            }
             isRecording = false
         }
     }
@@ -91,6 +114,11 @@ private final class ShortcutRecorder {
     private var fnKeyIsDown = false
 
     func record(completion: @escaping (KeyboardShortcut) -> Void) {
+        // A still-active session from a prior click (or an unclosed one left
+        // behind) would otherwise have its monitor references overwritten
+        // here and leaked — installed forever, able to change the shortcut
+        // out from under a later recording.
+        cancel()
         fnKeyIsDown = false
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
@@ -122,7 +150,14 @@ private final class ShortcutRecorder {
     }
 
     private func finish(with shortcut: KeyboardShortcut, completion: @escaping (KeyboardShortcut) -> Void) {
+        cancel()
         completion(shortcut)
+    }
+
+    /// Removes any installed monitors without firing the completion — used both
+    /// to guard against a leaked prior session and to abandon an in-progress
+    /// recording (e.g. the preferences window closing) without applying it.
+    func cancel() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
         keyMonitor = nil

@@ -64,7 +64,7 @@ final class HotkeyManager {
 
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
-    private let hotKeyID = EventHotKeyID(signature: OSType(0x4D4D5554), id: 1) // 'MMUT'
+    private static let hotKeyID = EventHotKeyID(signature: OSType(0x4D4D5554), id: 1) // 'MMUT'
 
     private var fnGlobalMonitor: Any?
     private var fnLocalMonitor: Any?
@@ -97,11 +97,44 @@ final class HotkeyManager {
         }
     }
 
-    func updateShortcut(_ shortcut: KeyboardShortcut) {
+    /// Returns `false` without touching the currently active shortcut if the new
+    /// one can't actually be registered (e.g. it's already claimed by another
+    /// app, or fn is requested without Accessibility trust) — otherwise the old,
+    /// working shortcut would already be torn down and lost by the time the
+    /// caller learns the replacement never took effect.
+    @discardableResult
+    func updateShortcut(_ shortcut: KeyboardShortcut) -> Bool {
+        guard shortcut != currentShortcut else { return true }
+        guard Self.canRegister(shortcut) else { return false }
+
         unregister()
         currentShortcut = shortcut
         Self.saveShortcut(shortcut)
         register(shortcut: shortcut)
+        return true
+    }
+
+    /// Probes whether `shortcut` could be registered without committing to it:
+    /// for fn, that means Accessibility is currently trusted (the monitor won't
+    /// deliver events otherwise); for everything else, a real trial call to
+    /// `RegisterEventHotKey` that's immediately released either way.
+    private static func canRegister(_ shortcut: KeyboardShortcut) -> Bool {
+        if shortcut.isFn {
+            return isAccessibilityTrusted()
+        }
+        var trialRef: EventHotKeyRef?
+        let status = RegisterEventHotKey(
+            shortcut.keyCode,
+            shortcut.modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &trialRef
+        )
+        if let trialRef {
+            UnregisterEventHotKey(trialRef)
+        }
+        return status == noErr
     }
 
     private func installHandler() {
@@ -126,7 +159,7 @@ final class HotkeyManager {
                     nil,
                     &receivedID
                 )
-                guard receivedID.id == manager.hotKeyID.id else { return noErr }
+                guard receivedID.id == HotkeyManager.hotKeyID.id else { return noErr }
                 let isDown = GetEventKind(eventRef) == UInt32(kEventHotKeyPressed)
                 DispatchQueue.main.async {
                     if isDown {
@@ -152,7 +185,7 @@ final class HotkeyManager {
         RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.modifiers,
-            hotKeyID,
+            Self.hotKeyID,
             GetApplicationEventTarget(),
             0,
             &hotKeyRef
@@ -173,7 +206,7 @@ final class HotkeyManager {
     /// Instead we watch flagsChanged globally (requires Accessibility permission) and
     /// locally (so it also fires while MacMute's own windows are focused).
     private func registerFnMonitor() {
-        Self.requestAccessibilityPermissionIfNeeded()
+        _ = Self.requestAccessibilityPermissionIfNeeded()
         fnKeyIsDown = false
         fnGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             self?.handleFnFlagsChanged(event)
@@ -202,9 +235,16 @@ final class HotkeyManager {
         }
     }
 
-    static func requestAccessibilityPermissionIfNeeded() {
+    /// Checks current Accessibility trust without prompting — used to probe
+    /// whether a fn registration would actually work before committing to it.
+    static func isAccessibilityTrusted() -> Bool {
+        AXIsProcessTrusted()
+    }
+
+    @discardableResult
+    static func requestAccessibilityPermissionIfNeeded() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+        return AXIsProcessTrustedWithOptions(options)
     }
 
     private static func loadShortcut() -> KeyboardShortcut? {
