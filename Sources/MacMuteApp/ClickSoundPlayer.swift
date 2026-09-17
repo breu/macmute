@@ -56,31 +56,39 @@ final class ClickSoundPlayer {
     }
 
     /// A short delay before rebuilding gives CoreAudio a moment to finish its own
-    /// hardware reinitialization after wake — rebuilding immediately at the
-    /// notification can race with that and still end up silently non-functional.
+    /// hardware reinitialization — after wake, or after the default output device
+    /// changes — before rebuilding; rebuilding immediately can race with that and
+    /// still end up silently non-functional (`isRunning` true, no audio reaching
+    /// the hardware).
+    private func scheduleRebuild() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.rebuildGraph()
+        }
+    }
+
     private func observeWake() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.rebuildGraph()
-            }
+            self?.scheduleRebuild()
         }
     }
 
     /// Apple posts this specifically when the engine's hardware configuration changes
     /// (sample rate, device, channel count) — the engine stops itself but does not
-    /// restart automatically. This is the documented signal for the exact class of
-    /// bug where sleep/wake silently kills audio output.
+    /// restart automatically. This fires for a default-output-device switch too, not
+    /// just sleep/wake, and needs the same full rebuild: a bare `engine.start()` here
+    /// previously left the engine reporting `isRunning == true` with no audio actually
+    /// reaching the newly-selected device.
     private func observeConfigurationChange() {
         configChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: .main
         ) { [weak self] _ in
-            self?.startEngine()
+            self?.scheduleRebuild()
         }
     }
 

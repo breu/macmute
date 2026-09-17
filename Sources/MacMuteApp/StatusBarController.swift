@@ -121,7 +121,7 @@ final class StatusBarController {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "MacMute",
-            .applicationVersion: "1.5",
+            .applicationVersion: "1.6",
             .credits: NSAttributedString(string: "Mutes your Mac's system microphone system-wide, at the hardware level.\n\nWritten by Joe Breu.")
         ])
     }
