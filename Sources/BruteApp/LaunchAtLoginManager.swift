@@ -105,7 +105,7 @@ final class LaunchAtLoginManager: LaunchAtLoginManaging {
                 }
             }
         } catch {
-            NSLog("Brute: failed to update launch-at-login state: \(error)")
+            BruteLog.launch.error("Failed to update launch-at-login state: \(error.localizedDescription, privacy: .public)")
             return .failure(.requestFailed(error))
         }
 

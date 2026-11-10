@@ -6,6 +6,11 @@ import Foundation
 final class MicrophoneActionController {
     static let shared = MicrophoneActionController(micController: .shared, hotkeyManager: .shared, defaults: .standard)
 
+    /// The slider stops offered to the user, and the stored default.
+    static let minimumDelay: TimeInterval = 0.2
+    static let maximumDelay: TimeInterval = 1.0
+    static let defaultDelay: TimeInterval = 0.4
+
     private enum Gesture {
         case idle
         case pressed(TimeInterval)
@@ -14,38 +19,60 @@ final class MicrophoneActionController {
     }
 
     private let micController: MicMuteController
-    private let playsFeedback: Bool
+    private let feedback: FeedbackPlaying?
     private let now: () -> TimeInterval
-    private static let delayKey = "MacMute.tapHoldDelay"
+    /// Legacy key retained deliberately: `BruteDefaults` documents why the
+    /// `MacMute.` prefix stays even though the app is Brute.
+    private static let delayKey = BruteDefaults.tapHoldDelay
     private let defaults: UserDefaults?
     private(set) var holdThreshold: TimeInterval
     private var gesture: Gesture = .idle
-    private var holdTimer: Timer?
+    private var holdTask: Task<Void, Never>?
+    private var wakeObserver: NotificationObservation?
+
+    /// Production wiring. A separate initializer because a default argument cannot
+    /// reach the main-actor-isolated `ClickSoundPlayer.shared`.
+    convenience init(
+        micController: MicMuteController,
+        hotkeyManager: HotkeyManager? = nil,
+        observesWake: Bool = true,
+        defaults: UserDefaults? = nil,
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) {
+        self.init(
+            micController: micController,
+            hotkeyManager: hotkeyManager,
+            feedback: ClickSoundPlayer.shared,
+            observesWake: observesWake,
+            defaults: defaults,
+            now: now
+        )
+    }
 
     init(
         micController: MicMuteController,
         hotkeyManager: HotkeyManager? = nil,
-        playsFeedback: Bool = true,
+        feedback: FeedbackPlaying?,
         observesWake: Bool = true,
         defaults: UserDefaults? = nil,
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.micController = micController
-        self.playsFeedback = playsFeedback
+        self.feedback = feedback
         self.now = now
         self.defaults = defaults
         let saved = defaults?.object(forKey: Self.delayKey) as? Double
-        holdThreshold = Self.validatedDelay(saved ?? 0.4)
+        holdThreshold = Self.validatedDelay(saved ?? Self.defaultDelay)
         hotkeyManager?.onHotkeyDown = { [weak self] in self?.handleDown() }
         hotkeyManager?.onHotkeyUp = { [weak self] in self?.handleUp() }
         hotkeyManager?.onHotkeyCancelled = { [weak self] in self?.cancelActiveGesture() }
         if observesWake {
-            NSWorkspace.shared.notificationCenter.addObserver(
-                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.handleWake() }
-            }
+            observeWake()
         }
+    }
+
+    deinit {
+        holdTask?.cancel()
     }
 
     /// Updates future gestures; an in-progress gesture keeps its original deadline.
@@ -55,25 +82,33 @@ final class MicrophoneActionController {
     }
 
     private static func validatedDelay(_ delay: TimeInterval) -> TimeInterval {
-        guard delay.isFinite else { return 0.4 }
-        return (min(1.0, max(0.2, delay)) * 5).rounded() / 5
+        guard delay.isFinite else { return defaultDelay }
+        // Clamp first, then snap onto a slider stop, so an out-of-range stored
+        // value still lands on a delay the user can see and select again.
+        return (min(maximumDelay, max(minimumDelay, delay)) * 5).rounded() / 5
     }
 
     func handleDown() {
         guard case .idle = gesture else { return }
         gesture = .pressed(now() + holdThreshold)
-        let timer = Timer(timeInterval: holdThreshold, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advanceHold() }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(holdThreshold))
+        holdTask = Task { @MainActor [weak self] in
+            do {
+                try await clock.sleep(until: deadline)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.advanceHold()
         }
-        holdTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
     }
 
-    /// The timer and release both check elapsed time, including a delayed timer delivery.
+    /// The scheduled hold check and release both validate the original deadline.
     func advanceHold() {
         guard case .pressed(let deadline) = gesture,
               now() >= deadline else { return }
-        invalidateTimer()
+        cancelHoldTask()
         applyFlip(temporary: true)
     }
 
@@ -83,11 +118,14 @@ final class MicrophoneActionController {
     }
 
     func handleWake() { cancelActiveGesture() }
-    func prepareForTermination() { cancelActiveGesture() }
+    func prepareForTermination() {
+        cancelActiveGesture()
+        wakeObserver = nil
+    }
     func cancelActiveGesture() { finishGesture(commitTap: false) }
 
     private func finishGesture(commitTap: Bool) {
-        invalidateTimer()
+        cancelHoldTask()
         switch gesture {
         case .pressed:
             if commitTap { applyFlip(temporary: false) }
@@ -100,7 +138,7 @@ final class MicrophoneActionController {
     }
 
     private func applyFlip(temporary: Bool) {
-        micController.refreshState()
+        micController.syncBeforeGesture()
         guard let prior = micController.state.mutedValue else {
             gesture = .failed
             return
@@ -112,13 +150,21 @@ final class MicrophoneActionController {
 
     /// All hotkey writes, including restoration, pass through this one boundary.
     private func writeMuted(_ muted: Bool, retryOnFailure: Bool = false) {
-        if micController.setMuted(muted, retryOnFailure: retryOnFailure), playsFeedback {
-            ClickSoundPlayer.shared.play()
+        if micController.setMuted(muted, retryOnFailure: retryOnFailure) {
+            feedback?.play()
         }
     }
 
-    private func invalidateTimer() {
-        holdTimer?.invalidate()
-        holdTimer = nil
+    private func cancelHoldTask() {
+        holdTask?.cancel()
+        holdTask = nil
+    }
+
+    private func observeWake() {
+        wakeObserver = NotificationObservation(
+            center: NSWorkspace.shared.notificationCenter, name: NSWorkspace.didWakeNotification, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleWake() }
+        }
     }
 }

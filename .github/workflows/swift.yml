@@ -1,6 +1,3 @@
-# This workflow will build a Swift project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
-
 name: Swift
 
 on:
@@ -9,14 +6,32 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   build:
-
     runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: swift build -v
-    - name: Run tests
-      run: swift test -v
+    - name: Lint packaging scripts
+      run: |
+        command -v shellcheck >/dev/null || brew install shellcheck
+        shellcheck Scripts/*.sh
+    - name: Build Swift package in release mode
+      run: swift build -c release -Xswiftc -warnings-as-errors
+    - name: Run release tests and coverage gate
+      run: bash Scripts/check_release.sh
+    - name: Build Xcode Release app
+      run: |
+        xcodebuild -project Brute.xcodeproj -scheme Brute -configuration Release \
+          -destination 'platform=macOS' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+          SWIFT_TREAT_WARNINGS_AS_ERRORS=YES build
+    - name: Run Xcode tests
+      run: |
+        # The app hosts tests that spawn shell commands, so omit its sandbox entitlements here.
+        xcodebuild -project Brute.xcodeproj -scheme Brute \
+          -destination 'platform=macOS' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+          ENABLE_APP_SANDBOX=NO CODE_SIGN_ENTITLEMENTS= \
+          SWIFT_TREAT_WARNINGS_AS_ERRORS=YES test

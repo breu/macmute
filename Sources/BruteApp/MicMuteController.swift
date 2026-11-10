@@ -2,441 +2,12 @@ import AppKit
 import CoreAudio
 import Foundation
 
-enum MicrophoneState: Equatable {
-    case muted
-    case unmuted
-    case unavailable
-
-    var mutedValue: Bool? {
-        switch self {
-        case .muted: true
-        case .unmuted: false
-        case .unavailable: nil
-        }
-    }
-}
-
-typealias InputVolumeSnapshot = [UInt32: Float32]
-
-@MainActor
-protocol AudioDeviceControlling: AnyObject {
-    func defaultInputDeviceID() -> AudioDeviceID?
-    func persistentIdentifier(for deviceID: AudioDeviceID) -> String?
-    func hasMuteProperty(on deviceID: AudioDeviceID) -> Bool
-    func isMuteSettable(on deviceID: AudioDeviceID) -> Bool
-    func readMute(on deviceID: AudioDeviceID) -> Bool?
-    func setMute(_ muted: Bool, on deviceID: AudioDeviceID) -> Bool
-    func isVolumeSettable(on deviceID: AudioDeviceID) -> Bool
-    func readVolumes(on deviceID: AudioDeviceID) -> InputVolumeSnapshot?
-    func setVolumes(_ volumes: InputVolumeSnapshot, on deviceID: AudioDeviceID) -> Bool
-    @discardableResult
-    func observeDefaultDeviceChanges(_ handler: @escaping @MainActor () -> Void) -> Bool
-    @discardableResult
-    func observeStateChanges(on deviceID: AudioDeviceID?, _ handler: @escaping @MainActor () -> Void) -> Bool
-}
-
-@MainActor
-final class CoreAudioDeviceController: AudioDeviceControlling {
-    private var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
-    private var defaultDeviceChangeHandler: (@MainActor () -> Void)?
-    private var stateListenerBlock: AudioObjectPropertyListenerBlock?
-    private var stateListenerDeviceID: AudioDeviceID?
-    private var stateListenerAddresses: [AudioObjectPropertyAddress] = []
-    private var stateChangeHandler: (@MainActor () -> Void)?
-
-    func defaultInputDeviceID() -> AudioDeviceID? {
-        var deviceID = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var address = Self.defaultDeviceAddress
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &size,
-            &deviceID
-        )
-        guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
-        return deviceID
-    }
-
-    func persistentIdentifier(for deviceID: AudioDeviceID) -> String? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceUID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var identifier: Unmanaged<CFString>?
-        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &identifier)
-        guard status == noErr, let identifier else { return nil }
-        return identifier.takeRetainedValue() as String
-    }
-
-    func hasMuteProperty(on deviceID: AudioDeviceID) -> Bool {
-        !readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).isEmpty
-    }
-
-    func isMuteSettable(on deviceID: AudioDeviceID) -> Bool {
-        !writableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).isEmpty
-    }
-
-    func readMute(on deviceID: AudioDeviceID) -> Bool? {
-        let values = readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).map { address -> Bool? in
-            var address = address
-            var value: UInt32 = 0
-            var size = UInt32(MemoryLayout<UInt32>.size)
-            let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value)
-            return status == noErr ? value != 0 : nil
-        }
-        guard !values.isEmpty, values.allSatisfy({ $0 != nil }) else { return nil }
-        return values.allSatisfy { $0 == true }
-    }
-
-    func setMute(_ muted: Bool, on deviceID: AudioDeviceID) -> Bool {
-        let addresses = writableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
-        guard !addresses.isEmpty else { return false }
-        var priorValues: [UInt32: UInt32] = [:]
-        for address in addresses {
-            var address = address
-            var value: UInt32 = 0
-            var size = UInt32(MemoryLayout<UInt32>.size)
-            guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr else {
-                return false
-            }
-            priorValues[address.mElement] = value
-        }
-        let addressesByElement = Dictionary(uniqueKeysWithValues: addresses.map { ($0.mElement, $0) })
-        let desiredValues = Dictionary(
-            uniqueKeysWithValues: addresses.map { ($0.mElement, muted ? UInt32(1) : UInt32(0)) }
-        )
-        return Self.performAtomicWrite(
-            elements: addresses.map(\.mElement),
-            priorValues: priorValues,
-            desiredValues: desiredValues
-        ) { element, value in
-            guard var address = addressesByElement[element] else { return false }
-            var value = value
-            return AudioObjectSetPropertyData(
-                deviceID,
-                &address,
-                0,
-                nil,
-                UInt32(MemoryLayout<UInt32>.size),
-                &value
-            ) == noErr
-        }
-    }
-
-    func isVolumeSettable(on deviceID: AudioDeviceID) -> Bool {
-        !writableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID).isEmpty
-    }
-
-    func readVolumes(on deviceID: AudioDeviceID) -> InputVolumeSnapshot? {
-        let addresses = readableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
-        guard !addresses.isEmpty else { return nil }
-        var result: InputVolumeSnapshot = [:]
-        for originalAddress in addresses {
-            var address = originalAddress
-            var value: Float32 = 0
-            var size = UInt32(MemoryLayout<Float32>.size)
-            guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr,
-                  value.isFinite,
-                  (0...1).contains(value)
-            else { return nil }
-            result[address.mElement] = value
-        }
-        return result
-    }
-
-    func setVolumes(_ volumes: InputVolumeSnapshot, on deviceID: AudioDeviceID) -> Bool {
-        let addresses = writableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
-        guard !addresses.isEmpty,
-              Set(addresses.map(\.mElement)) == Set(volumes.keys),
-              volumes.values.allSatisfy({ $0.isFinite && (0...1).contains($0) })
-        else { return false }
-        var prior: InputVolumeSnapshot = [:]
-        for originalAddress in addresses {
-            var address = originalAddress
-            var value: Float32 = 0
-            var size = UInt32(MemoryLayout<Float32>.size)
-            guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr,
-                  value.isFinite,
-                  (0...1).contains(value)
-            else { return false }
-            prior[address.mElement] = value
-        }
-        let addressesByElement = Dictionary(uniqueKeysWithValues: addresses.map { ($0.mElement, $0) })
-        return Self.performAtomicWrite(
-            elements: addresses.map(\.mElement),
-            priorValues: prior,
-            desiredValues: volumes
-        ) { element, value in
-            guard var address = addressesByElement[element] else { return false }
-            var value = value
-            return AudioObjectSetPropertyData(
-                deviceID,
-                &address,
-                0,
-                nil,
-                UInt32(MemoryLayout<Float32>.size),
-                &value
-            ) == noErr
-        }
-    }
-
-    func observeDefaultDeviceChanges(_ handler: @escaping @MainActor () -> Void) -> Bool {
-        defaultDeviceChangeHandler = handler
-        guard defaultDeviceListenerBlock == nil else { return true }
-
-        var address = Self.defaultDeviceAddress
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            Task { @MainActor [weak self] in
-                self?.defaultDeviceChangeHandler?()
-            }
-        }
-        let status = AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            DispatchQueue.main,
-            block
-        )
-        guard status == noErr else {
-            NSLog("Brute: failed to observe default input device changes (OSStatus %d)", status)
-            return false
-        }
-        defaultDeviceListenerBlock = block
-        return true
-    }
-
-    func observeStateChanges(
-        on deviceID: AudioDeviceID?,
-        _ handler: @escaping @MainActor () -> Void
-    ) -> Bool {
-        removeStateListener()
-        stateChangeHandler = handler
-        guard let deviceID else { return false }
-
-        var addresses = readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID)
-        addresses.append(contentsOf: writableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID))
-        addresses.append(contentsOf: readableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID))
-        addresses.append(contentsOf: writableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID))
-        addresses = addresses.reduce(into: []) { result, address in
-            guard !result.contains(where: {
-                $0.mSelector == address.mSelector && $0.mScope == address.mScope && $0.mElement == address.mElement
-            }) else { return }
-            result.append(address)
-        }
-        guard !addresses.isEmpty else { return false }
-
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            Task { @MainActor [weak self] in
-                self?.stateChangeHandler?()
-            }
-        }
-        var allRegistered = true
-        for originalAddress in addresses {
-            var address = originalAddress
-            let status = AudioObjectAddPropertyListenerBlock(
-                deviceID,
-                &address,
-                DispatchQueue.main,
-                block
-            )
-            if status == noErr {
-                stateListenerAddresses.append(originalAddress)
-            } else {
-                allRegistered = false
-                NSLog("Brute: failed to observe microphone state changes (OSStatus %d)", status)
-            }
-        }
-        guard !stateListenerAddresses.isEmpty else { return false }
-        stateListenerDeviceID = deviceID
-        stateListenerBlock = block
-        return allRegistered
-    }
-
-    private func removeStateListener() {
-        guard let deviceID = stateListenerDeviceID,
-              let block = stateListenerBlock
-        else { return }
-        for originalAddress in stateListenerAddresses {
-            var address = originalAddress
-            let status = AudioObjectRemovePropertyListenerBlock(deviceID, &address, DispatchQueue.main, block)
-            if status != noErr {
-                NSLog("Brute: failed to remove microphone state observer (OSStatus %d)", status)
-            }
-        }
-        stateListenerDeviceID = nil
-        stateListenerAddresses = []
-        stateListenerBlock = nil
-    }
-
-    private func controlAddressInventory(
-        selector: AudioObjectPropertySelector,
-        on deviceID: AudioDeviceID
-    ) -> (
-        main: AudioObjectPropertyAddress,
-        mainAvailable: Bool,
-        mainSettable: Bool,
-        inputElements: [UInt32],
-        channels: [UInt32: AudioObjectPropertyAddress],
-        settableChannels: Set<UInt32>
-    ) {
-        var main = AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let hasMain = AudioObjectHasProperty(deviceID, &main)
-        var mainForSettableCheck = main
-        let mainIsSettable = hasMain && Self.isSettable(deviceID: deviceID, address: &mainForSettableCheck)
-        let inputElements = inputChannelElements(on: deviceID)
-        let channelAddressesByElement = Dictionary(uniqueKeysWithValues: inputElements.compactMap { element in
-            var address = AudioObjectPropertyAddress(
-                mSelector: selector,
-                mScope: kAudioObjectPropertyScopeInput,
-                mElement: element
-            )
-            return AudioObjectHasProperty(deviceID, &address) ? (element, address) : nil
-        })
-        let settableChannelElements = Set(channelAddressesByElement.compactMap { element, originalAddress in
-            var address = originalAddress
-            return Self.isSettable(deviceID: deviceID, address: &address) ? element : nil
-        })
-        return (main, hasMain, mainIsSettable, inputElements, channelAddressesByElement, settableChannelElements)
-    }
-
-    private func readableControlAddresses(
-        selector: AudioObjectPropertySelector,
-        on deviceID: AudioDeviceID
-    ) -> [AudioObjectPropertyAddress] {
-        let inventory = controlAddressInventory(selector: selector, on: deviceID)
-        let selectedElements = Self.resolveReadableControlElements(
-            mainAvailable: inventory.mainAvailable,
-            inputElements: inventory.inputElements,
-            availableChannelElements: Set(inventory.channels.keys)
-        )
-        return selectedElements.compactMap { element in
-            element == kAudioObjectPropertyElementMain ? inventory.main : inventory.channels[element]
-        }
-    }
-
-    private func writableControlAddresses(
-        selector: AudioObjectPropertySelector,
-        on deviceID: AudioDeviceID
-    ) -> [AudioObjectPropertyAddress] {
-        let inventory = controlAddressInventory(selector: selector, on: deviceID)
-        let selectedElements = Self.resolveWritableControlElements(
-            mainAvailable: inventory.mainAvailable,
-            mainSettable: inventory.mainSettable,
-            inputElements: inventory.inputElements,
-            availableChannelElements: Set(inventory.channels.keys),
-            settableChannelElements: inventory.settableChannels
-        )
-        return selectedElements.compactMap { element in
-            element == kAudioObjectPropertyElementMain ? inventory.main : inventory.channels[element]
-        }
-    }
-
-    static func resolveReadableControlElements(
-        mainAvailable: Bool,
-        inputElements: [UInt32],
-        availableChannelElements: Set<UInt32>
-    ) -> [UInt32] {
-        if mainAvailable { return [kAudioObjectPropertyElementMain] }
-        let required = Set(inputElements)
-        return !required.isEmpty && required.isSubset(of: availableChannelElements) ? inputElements : []
-    }
-
-    static func resolveWritableControlElements(
-        mainAvailable: Bool,
-        mainSettable: Bool,
-        inputElements: [UInt32],
-        availableChannelElements: Set<UInt32>,
-        settableChannelElements: Set<UInt32>
-    ) -> [UInt32] {
-        if mainAvailable, mainSettable {
-            return [kAudioObjectPropertyElementMain]
-        }
-        let required = Set(inputElements)
-        if !required.isEmpty,
-           required.isSubset(of: availableChannelElements),
-           required.isSubset(of: settableChannelElements) {
-            return inputElements
-        }
-        return []
-    }
-
-    private func inputChannelElements(on deviceID: AudioDeviceID) -> [UInt32] {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr,
-              size >= MemoryLayout<AudioBufferList>.size
-        else { return [] }
-        let storage = UnsafeMutableRawPointer.allocate(
-            byteCount: Int(size),
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        )
-        defer { storage.deallocate() }
-        let bufferList = storage.bindMemory(to: AudioBufferList.self, capacity: 1)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, bufferList) == noErr else {
-            return []
-        }
-        let channelCount = UnsafeMutableAudioBufferListPointer(bufferList)
-            .reduce(0) { $0 + Int($1.mNumberChannels) }
-        guard channelCount > 0 else { return [] }
-        return (1...channelCount).map(UInt32.init)
-    }
-
-    static func performAtomicWrite<Value>(
-        elements: [UInt32],
-        priorValues: [UInt32: Value],
-        desiredValues: [UInt32: Value],
-        write: (UInt32, Value) -> Bool
-    ) -> Bool {
-        guard Set(elements) == Set(priorValues.keys),
-              Set(elements) == Set(desiredValues.keys)
-        else { return false }
-        var changed: [UInt32] = []
-        for element in elements {
-            guard let desired = desiredValues[element], write(element, desired) else {
-                for changedElement in changed.reversed() {
-                    if let prior = priorValues[changedElement] {
-                        _ = write(changedElement, prior)
-                    }
-                }
-                return false
-            }
-            changed.append(element)
-        }
-        return true
-    }
-
-    private static func isSettable(
-        deviceID: AudioDeviceID,
-        address: inout AudioObjectPropertyAddress
-    ) -> Bool {
-        var settable = DarwinBoolean(false)
-        let status = AudioObjectIsPropertySettable(deviceID, &address, &settable)
-        return status == noErr && settable.boolValue
-    }
-
-    private static var defaultDeviceAddress: AudioObjectPropertyAddress {
-        AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-    }
-
-
-}
-
+/// Owns microphone state: device transfers, pending state changes, ownership of a
+/// mute it applied, and restoration retries.
+///
+/// Every hardware write funnels through `applyMute`, so there is exactly one place
+/// where the device is touched. Writes are confirmed against readback; an accepted
+/// write whose effect is delayed stays pending until observed.
 @MainActor
 final class MicMuteController {
     static let shared = MicMuteController(hardware: CoreAudioDeviceController())
@@ -444,6 +15,11 @@ final class MicMuteController {
     private(set) var state: MicrophoneState
     var isMuted: Bool { state == .muted }
     var onStateChanged: ((MicrophoneState) -> Void)?
+
+    /// Why the microphone cannot currently be controlled, for the UI. Cleared when
+    /// the microphone becomes available again. Without this the menu can only say
+    /// "Unavailable" and the reason reaches the log, which no user reads.
+    private(set) var lastError: MicControlError?
 
     private let hardware: AudioDeviceControlling
     private var savedVolumes: [String: InputVolumeSnapshot]
@@ -456,11 +32,25 @@ final class MicMuteController {
     private(set) var currentDeviceID: AudioDeviceID?
     private let defaults: UserDefaults
     private var statePollTimer: Timer?
+    private(set) var scheduledPollInterval: TimeInterval?
+    private var pollGeneration = 0
+    private var sleepObserver: NotificationObservation?
+    private var wakeObserver: NotificationObservation?
+    private var observesSystemChanges: Bool
+    private var observesDefaultDevice = false
+    private var currentWriteFailed = false
 
-    private let defaultExplicitUnmuteVolume: Float32 = 1.0
-    private static let savedVolumesDefaultsKey = "MacMute.savedInputVolumes"
-    private static let appMutedDevicesDefaultsKey = "MacMute.appMutedInputDevices"
-    private static let pendingDesiredStatesDefaultsKey = "MacMute.pendingInputStates"
+    /// Poll cadence while a write is waiting to be confirmed by readback.
+    static let activePollInterval: TimeInterval = 0.25
+    /// Poll cadence when one or more CoreAudio listeners could not be installed.
+    static let fallbackPollInterval: TimeInterval = 1
+    /// Poll cadence while push observation is healthy and nothing is outstanding.
+    /// The poll is a safety net, not the primary signal — see `refreshInterval`.
+    static let idlePollInterval: TimeInterval = 10
+
+    private static let savedVolumesDefaultsKey = BruteDefaults.savedInputVolumes
+    private static let appMutedDevicesDefaultsKey = BruteDefaults.appMutedInputDevices
+    private static let pendingDesiredStatesDefaultsKey = BruteDefaults.pendingInputStates
 
     private struct DeviceIdentity {
         let deviceID: AudioDeviceID
@@ -475,10 +65,13 @@ final class MicMuteController {
     ) {
         self.hardware = hardware
         self.defaults = defaults
+        self.observesSystemChanges = observeSystemChanges
         savedVolumes = Self.loadSavedVolumes(from: defaults)
         appMutedDeviceIdentifiers = Self.loadAppMutedDeviceIdentifiers(from: defaults)
         pendingDesiredStates = Self.loadPendingDesiredStates(from: defaults)
         currentDeviceID = hardware.defaultInputDeviceID()
+        // The static form, because an instance method would capture `self` before
+        // `state` below has a value.
         state = currentDeviceID.map { Self.readState(on: $0, using: hardware) } ?? .unavailable
         if let currentDeviceID {
             remember(currentDeviceID)
@@ -491,20 +84,19 @@ final class MicMuteController {
            pendingDesiredStates[identity.key] != true {
             removeAppMuteOwnership(identity)
         }
+        lastError = Self.availabilityError(for: state, hasDevice: currentDeviceID != nil)
 
         guard observeSystemChanges else { return }
-        let observesDefaultDevice = hardware.observeDefaultDeviceChanges { [weak self] in
-            self?.handleDefaultDeviceChange()
+        observeDefaultDeviceChanges()
+        observeCurrentDeviceState()
+        if !systemObservationIsHealthy {
+            BruteLog.audio.warning("CoreAudio observation is incomplete; periodic verification remains active")
         }
-        let observesState = hardware.observeStateChanges(on: currentDeviceID) { [weak self] in
-            self?.refreshState()
-        }
-        if !observesDefaultDevice || !observesState {
-            NSLog("Brute: CoreAudio observation is incomplete; periodic verification remains active")
-        }
-        startStatePolling()
-        observeWake()
+        scheduleStatePoll()
+        observeLifecycle()
     }
+
+    // MARK: - Public surface
 
     @discardableResult
     func setMuted(_ muted: Bool, retryOnFailure: Bool = false) -> Bool {
@@ -529,7 +121,7 @@ final class MicMuteController {
             publish(.unavailable)
             return false
         }
-        let actual = Self.readState(on: deviceID, using: hardware)
+        let actual = readState(on: deviceID)
         if accepted {
             pendingForcedWrites.remove(identity.key)
             confirm(actual, desired: muted, identity: identity)
@@ -537,40 +129,57 @@ final class MicMuteController {
         if !accepted, !retryOnFailure {
             clearPendingDesiredState(forIdentifier: identity.key)
         }
-        publish(actual)
+        if !accepted {
+            BruteLog.audio.warning("Could not change microphone mute state")
+        }
+        publish(actual, writeFailed: !accepted)
         return accepted
     }
 
     func prepareForSleep() {
         guard let deviceID = currentDeviceID,
               let identity = validatedIdentity(for: deviceID, mustRemainDefault: true),
-              ownsMute(identity)
+              ownsMute(identity),
+              pendingDesiredStates[identity.key] == nil
         else { return }
         setPendingDesiredState(true, for: identity)
+        scheduleStatePoll()
     }
 
     func handleWake() {
+        hardware.invalidateControlCaches(for: nil)
+        if observesSystemChanges {
+            if !observesDefaultDevice { observeDefaultDeviceChanges() }
+            observeCurrentDeviceState()
+        }
         if let deviceID = currentDeviceID,
            let identity = validatedIdentity(for: deviceID, mustRemainDefault: true),
-           ownsMute(identity) || pendingDesiredStates[identity.key] == true {
+           ownsMute(identity) || pendingDesiredStates[identity.key] == true,
+           pendingDesiredStates[identity.key] != false {
             _ = setMuted(true, retryOnFailure: true)
         }
-        retryPendingDesiredStates()
-        retryPendingRestorations(excluding: currentDeviceID)
         refreshState()
     }
 
     func handleDefaultDeviceChange() {
         let newDeviceID = hardware.defaultInputDeviceID()
         guard newDeviceID != currentDeviceID else {
+            hardware.invalidateControlCaches(for: currentDeviceID)
             refreshState()
             return
         }
+        transitionDefaultDevice(to: newDeviceID)
+    }
 
+    private func transitionDefaultDevice(to newDeviceID: AudioDeviceID?) {
         let oldDeviceID = currentDeviceID
+        hardware.invalidateControlCaches(for: oldDeviceID)
+        if let newDeviceID, oldDeviceID != nil {
+            hardware.invalidateControlCaches(for: newDeviceID)
+        }
         let oldIdentity = oldDeviceID.map { validatedCurrentIdentity(for: $0) }
         let departingState = oldDeviceID.flatMap { deviceID in
-            oldIdentity?.matches == true ? Self.readState(on: deviceID, using: hardware) : nil
+            oldIdentity?.matches == true ? readState(on: deviceID) : nil
         } ?? state
         let departingPendingState = oldIdentity.flatMap { pendingDesiredStates[$0.key] }
         let desiredStateToCarry = pendingDesiredStateAcrossUnavailableDevice
@@ -585,7 +194,7 @@ final class MicMuteController {
                let identity = validatedIdentity(for: oldDeviceID, mustRemainDefault: false),
                ownsMute(identity),
                !restoreAppOwnedMute(identity) {
-                NSLog("Brute: could not restore departing input device; restoration remains queued")
+                BruteLog.audio.warning("Could not restore departing input device; restoration remains queued")
             } else if oldIdentity?.matches == false,
                       let key = oldIdentity?.key,
                       knownDeviceIDs[key] == oldDeviceID {
@@ -594,14 +203,13 @@ final class MicMuteController {
         }
 
         currentDeviceID = newDeviceID
+        currentWriteFailed = false
         if let newDeviceID {
             remember(newDeviceID)
         }
-        let observesState = hardware.observeStateChanges(on: newDeviceID) { [weak self] in
-            self?.refreshState()
-        }
-        if !observesState {
-            startStatePolling()
+        if observesSystemChanges {
+            if !observesDefaultDevice { observeDefaultDeviceChanges() }
+            observeCurrentDeviceState()
         }
 
         guard let newDeviceID else {
@@ -615,23 +223,32 @@ final class MicMuteController {
                 setPendingDesiredState(desiredState, for: identity)
                 let accepted = applyMute(desiredState, to: identity)
                 if accepted, identityStillMatches(identity) {
-                    confirm(Self.readState(on: newDeviceID, using: hardware), desired: desiredState, identity: identity)
+                    confirm(readState(on: newDeviceID), desired: desiredState, identity: identity)
                 }
             }
         }
-        publish(Self.readState(on: newDeviceID, using: hardware))
+        publish(readState(on: newDeviceID))
     }
 
+    /// Full reconciliation: retries anything outstanding and republishes. Driven by
+    /// listeners and by the poll timer.
     func refreshState() {
         reconcileCurrentDeviceIfNeeded()
         retryPendingDesiredStates()
         retryPendingRestorations(excluding: currentDeviceID)
+        refreshCurrentDeviceState()
+    }
+
+    private func refreshCurrentDeviceState() {
         guard let deviceID = currentDeviceID else {
             publish(.unavailable)
             return
         }
-        let actual = Self.readState(on: deviceID, using: hardware)
-        if let identity = validatedIdentity(for: deviceID, mustRemainDefault: true) {
+        let actual = readState(on: deviceID)
+        let trackedKey = trackedKey(for: deviceID)
+        if (pendingDesiredStates[trackedKey] != nil
+            || (actual == .unmuted && appMutedDeviceIdentifiers.contains(trackedKey))),
+           let identity = validatedIdentity(for: deviceID, mustRemainDefault: true) {
             if let desired = pendingDesiredStates[identity.key] {
                 confirm(actual, desired: desired, identity: identity)
             }
@@ -642,15 +259,90 @@ final class MicMuteController {
         publish(actual)
     }
 
-    private func reconcileCurrentDeviceIfNeeded() {
-        if hardware.defaultInputDeviceID() != currentDeviceID {
-            handleDefaultDeviceChange()
-        }
+    /// Cheaper read for the start of a gesture: reconcile and read the device, but
+    /// skip the pending-restoration sweep across every device Brute knows about.
+    ///
+    /// A gesture needs an accurate *current* state to flip from; it does not need
+    /// unrelated devices repaired first. Those still get retried by `refreshState`
+    /// on the next listener callback or poll tick.
+    func syncBeforeGesture() {
+        reconcileCurrentDeviceIfNeeded()
+        retryPendingDesiredStates(includingOtherDevices: false)
+        refreshCurrentDeviceState()
     }
 
+    /// Stops timers and system observers. The shared controller lives for the
+    /// process; an instance that does not should call this.
+    func shutdown() {
+        onStateChanged = nil
+        guard observesSystemChanges else { return }
+        observesSystemChanges = false
+        statePollTimer?.invalidate()
+        statePollTimer = nil
+        scheduledPollInterval = nil
+        sleepObserver = nil
+        wakeObserver = nil
+        hardware.shutdown()
+    }
+
+    // MARK: - Polling
+
+    /// Whether push observation can be trusted to tell us about changes.
+    /// Internal so the regression suite can drive both cadences.
+    var systemObservationIsHealthy = false
+
+    /// An outstanding write must target a device we can still check. Owning a
+    /// confirmed mute on the current device is steady state.
+    var hasOutstandingWork: Bool {
+        let currentKey = currentDeviceID.map { trackedKey(for: $0) }
+        return pendingDesiredStates.keys.contains { $0 == currentKey || knownDeviceIDs[$0] != nil }
+            || appMutedDeviceIdentifiers.contains { identifier in
+                guard let deviceID = knownDeviceIDs[identifier] else { return false }
+                return deviceID != currentDeviceID
+            }
+    }
+
+    /// The poll is a safety net for missed or failed CoreAudio notifications, not
+    /// the primary signal. Polling it at a fixed 1 Hz costs dozens of CoreAudio
+    /// round trips a second, forever, in an app meant to run for weeks — so the
+    /// cadence follows how much is actually in flight.
+    ///
+    /// Internal so the suite can pin the cadence contract.
+    var refreshInterval: TimeInterval {
+        if hasOutstandingWork { return Self.activePollInterval }
+        return systemObservationIsHealthy ? Self.idlePollInterval : Self.fallbackPollInterval
+    }
+
+    private func scheduleStatePoll() {
+        guard observesSystemChanges else { return }
+        let interval = refreshInterval
+        guard scheduledPollInterval != interval else { return }
+        statePollTimer?.invalidate()
+        pollGeneration += 1
+        let generation = pollGeneration
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.observesSystemChanges, self.pollGeneration == generation else { return }
+                self.statePollTimer = nil
+                self.scheduledPollInterval = nil
+                self.refreshState()
+            }
+        }
+        timer.tolerance = interval * 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        statePollTimer = timer
+        scheduledPollInterval = interval
+    }
+
+    // MARK: - Hardware access
+
+    /// The one place a device's controls are written.
     private func applyMute(_ muted: Bool, to identity: DeviceIdentity, forceWrite: Bool = false) -> Bool {
         guard identityStillMatches(identity) else { return false }
         let deviceID = identity.deviceID
+        // A channel may have appeared before its change notification arrives.
+        // Rediscover once per write so an old inventory can't omit that channel.
+        hardware.invalidateControlCaches(for: deviceID)
         let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
         let nativeMuteIsSettable = hasNativeMute && hardware.isMuteSettable(on: deviceID)
         if nativeMuteIsSettable {
@@ -669,7 +361,7 @@ final class MicMuteController {
                 if muted { return true }
             }
             if let volumes = hardware.readVolumes(on: deviceID),
-               Self.volumesAreMuted(volumes) || (forceWrite && savedVolumes[identity.key] != nil) {
+               AudioControlPolicy.volumesAreMuted(volumes) || (forceWrite && savedVolumes[identity.key] != nil) {
                 // Continue so an explicit unmute also restores a fallback-zeroed volume.
             } else {
                 return true
@@ -689,7 +381,7 @@ final class MicMuteController {
         else { return false }
 
         if muted {
-            if Self.volumesAreMuted(currentVolumes), !forceWrite {
+            if AudioControlPolicy.volumesAreMuted(currentVolumes), !forceWrite {
                 return true
             }
             // A retry may observe only some channels at zero. Keep the original baseline.
@@ -708,10 +400,10 @@ final class MicMuteController {
             return true
         }
 
-        if !Self.volumesAreMuted(currentVolumes), !forceWrite {
+        if !AudioControlPolicy.volumesAreMuted(currentVolumes), !forceWrite {
             return true
         }
-        let restoredVolumes = restorationVolumes(
+        let restoredVolumes = AudioControlPolicy.restorationVolumes(
             saved: savedVolumes[identity.key],
             current: currentVolumes
         )
@@ -722,12 +414,30 @@ final class MicMuteController {
         return true
     }
 
+    private func readState(on deviceID: AudioDeviceID) -> MicrophoneState {
+        Self.readState(on: deviceID, using: hardware)
+    }
+
+    /// Samples each relevant control at most once per state read.
+    static func readState(
+        on deviceID: AudioDeviceID,
+        using hardware: AudioDeviceControlling
+    ) -> MicrophoneState {
+        let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
+        let nativeMute = hasNativeMute ? hardware.readMute(on: deviceID) : nil
+        return AudioControlPolicy.state(
+            hasNativeMute: hasNativeMute,
+            nativeMute: nativeMute,
+            volumes: nativeMute == true ? nil : hardware.readVolumes(on: deviceID)
+        )
+    }
+
     private func restoreAppOwnedMute(_ identity: DeviceIdentity) -> Bool {
         guard identityStillMatches(identity) else { return false }
         let deviceID = identity.deviceID
         // Restore both native mute and any fallback volume this app changed.
         let restored = applyMute(false, to: identity)
-        if restored, identityStillMatches(identity), Self.readState(on: deviceID, using: hardware) == .unmuted {
+        if restored, identityStillMatches(identity), readState(on: deviceID) == .unmuted {
             removeAppMuteOwnership(identity)
         }
         return restored
@@ -767,9 +477,12 @@ final class MicMuteController {
         }
     }
 
-    private func retryPendingDesiredStates() {
+    private func retryPendingDesiredStates(includingOtherDevices: Bool = true) {
+        let currentKey = currentDeviceID.map { trackedKey(for: $0) }
         let pending = Array(pendingDesiredStates).compactMap { identifier, desired -> (DeviceIdentity, Bool)? in
-            guard let deviceID = validatedDeviceID(for: identifier) else { return nil }
+            guard includingOtherDevices || identifier == currentKey else { return nil }
+            let deviceID = identifier == currentKey ? currentDeviceID : validatedDeviceID(for: identifier)
+            guard let deviceID else { return nil }
             let mustRemainDefault = deviceID == currentDeviceID
             guard let identity = validatedIdentity(for: deviceID, mustRemainDefault: mustRemainDefault),
                   identity.key == identifier
@@ -780,15 +493,48 @@ final class MicMuteController {
             let accepted = applyMute(desired, to: identity, forceWrite: pendingForcedWrites.contains(identity.key))
             if accepted, identityStillMatches(identity) {
                 pendingForcedWrites.remove(identity.key)
-                confirm(Self.readState(on: identity.deviceID, using: hardware), desired: desired, identity: identity)
+                confirm(readState(on: identity.deviceID), desired: desired, identity: identity)
             }
         }
     }
 
-    private func publish(_ newState: MicrophoneState) {
-        guard newState != state else { return }
+    private func reconcileCurrentDeviceIfNeeded() {
+        let newDeviceID = hardware.defaultInputDeviceID()
+        if newDeviceID != currentDeviceID {
+            transitionDefaultDevice(to: newDeviceID)
+        }
+    }
+
+    /// The single place state becomes visible, which also keeps `lastError` in step
+    /// with the state it explains — the UI can never show a stale reason next to a
+    /// healthy microphone.
+    private func publish(_ newState: MicrophoneState, writeFailed: Bool? = nil) {
+        let previousError = lastError
+        if let writeFailed {
+            currentWriteFailed = writeFailed
+        } else if newState != state {
+            currentWriteFailed = false
+        }
+        lastError = Self.availabilityError(for: newState, hasDevice: currentDeviceID != nil)
+            ?? (currentWriteFailed ? .writeFailed : nil)
+        scheduleStatePoll()
+        guard newState != state || lastError != previousError else { return }
         state = newState
         onStateChanged?(newState)
+    }
+
+    private static func availabilityError(
+        for state: MicrophoneState,
+        hasDevice: Bool
+    ) -> MicControlError? {
+        guard state == .unavailable else { return nil }
+        return hasDevice ? .deviceControlsUnreadable : .noInputDevice
+    }
+
+    // MARK: - Device identity
+
+    private func trackedKey(for deviceID: AudioDeviceID) -> String {
+        cachedDeviceIdentifiers[deviceID].map { "uid:\($0)" } ?? "session:\(deviceID)"
     }
 
     private func volumeKey(for deviceID: AudioDeviceID) -> String {
@@ -861,9 +607,15 @@ final class MicMuteController {
             key: validation.key,
             mustRemainDefault: mustRemainDefault
         )
-        return identityStillMatches(identity) ? identity : nil
+        guard identityStillMatches(identity) else { return nil }
+        knownDeviceIDs[identity.key] = deviceID
+        return identity
     }
 
+    /// Re-checks identity against live hardware. Every write path calls this
+    /// immediately before and after touching a device, so an AudioObjectID that has
+    /// been recycled onto a different device can never receive this device's
+    /// volume baseline.
     private func identityStillMatches(_ identity: DeviceIdentity) -> Bool {
         if identity.mustRemainDefault, hardware.defaultInputDeviceID() != identity.deviceID { return false }
         if identity.key.hasPrefix("uid:") {
@@ -881,18 +633,12 @@ final class MicMuteController {
     ) {
         guard !pendingForcedWrites.contains(identity.key), actual.mutedValue == desired else { return }
         clearPendingDesiredState(forIdentifier: identity.key)
+        if identity.mustRemainDefault {
+            currentWriteFailed = false
+        }
         if !desired {
             removeAppMuteOwnership(identity)
         }
-    }
-
-    private func restorationVolumes(
-        saved: InputVolumeSnapshot?,
-        current: InputVolumeSnapshot
-    ) -> InputVolumeSnapshot {
-        Dictionary(uniqueKeysWithValues: current.keys.map { element in
-            (element, saved?[element] ?? defaultExplicitUnmuteVolume)
-        })
     }
 
     private func migrateSessionState(for deviceID: AudioDeviceID, to persistentKey: String) {
@@ -915,6 +661,8 @@ final class MicMuteController {
         persistAppMutedDeviceIdentifiers()
         persistPendingDesiredStates()
     }
+
+    // MARK: - Persistence
 
     private func persistSavedVolumes() {
         let persistent = savedVolumes.filter { $0.key.hasPrefix("uid:") }
@@ -946,20 +694,6 @@ final class MicMuteController {
     private func persistPendingDesiredStates() {
         let persistent = pendingDesiredStates.filter { $0.key.hasPrefix("uid:") }
         defaults.set(persistent, forKey: Self.pendingDesiredStatesDefaultsKey)
-    }
-
-    private func startStatePolling() {
-        guard statePollTimer == nil else { return }
-        let timer = Timer(timeInterval: 1, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.statePollTimer = nil
-                self.refreshState()
-                self.startStatePolling()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        statePollTimer = timer
     }
 
     private static func loadSavedVolumes(from defaults: UserDefaults) -> [String: InputVolumeSnapshot] {
@@ -1012,57 +746,68 @@ final class MicMuteController {
         return number
     }
 
+    /// Only persistent (`uid:`) keys are ever stored; a `session:` key is an
+    /// AudioObjectID that the next launch may hand to a different device.
     private static func isPersistentKey(_ key: String) -> Bool {
         key.hasPrefix("uid:") && !key.dropFirst(4).isEmpty
     }
 
-    private func observeWake() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.willSleepNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.prepareForSleep()
-            }
-        }
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleWake()
-            }
+    // MARK: - Lifecycle observation
+
+    private func observeDefaultDeviceChanges() {
+        observesDefaultDevice = hardware.observeDefaultDeviceChanges { [weak self] in
+            guard let self, self.observesSystemChanges else { return }
+            self.handleDefaultDeviceChange()
         }
     }
 
-    static func readState(
-        on deviceID: AudioDeviceID,
-        using hardware: AudioDeviceControlling
-    ) -> MicrophoneState {
-        let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
-        let nativeMute = hasNativeMute ? hardware.readMute(on: deviceID) : nil
-        if nativeMute == true { return .muted }
-        let volumes = hardware.readVolumes(on: deviceID)
-        if let volumes, Self.volumesAreMuted(volumes) { return .muted }
-        if nativeMute == false { return .unmuted }
-        if !hasNativeMute, let volumes, !volumes.isEmpty { return .unmuted }
-        return .unavailable
+    private func observeCurrentDeviceState() {
+        let observesState = hardware.observeStateChanges(on: currentDeviceID) { [weak self] in
+            guard let self, self.observesSystemChanges else { return }
+            self.refreshState()
+        }
+        systemObservationIsHealthy = observesDefaultDevice && observesState
     }
 
-    private static func volumesAreMuted(_ volumes: InputVolumeSnapshot) -> Bool {
-        !volumes.isEmpty && volumes.values.allSatisfy { $0 <= 0.0001 }
+    private func observeLifecycle() {
+        let center = NSWorkspace.shared.notificationCenter
+        sleepObserver = NotificationObservation(
+            center: center,
+            name: NSWorkspace.willSleepNotification,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.observesSystemChanges else { return }
+                self.prepareForSleep()
+            }
+        }
+        wakeObserver = NotificationObservation(
+            center: center,
+            name: NSWorkspace.didWakeNotification,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.observesSystemChanges else { return }
+                self.handleWake()
+            }
+        }
     }
+}
 
-    private static func volumesMatch(
-        _ actual: InputVolumeSnapshot,
-        _ expected: InputVolumeSnapshot
-    ) -> Bool {
-        guard Set(actual.keys) == Set(expected.keys) else { return false }
-        return expected.allSatisfy { element, volume in
-            guard let actualVolume = actual[element] else { return false }
-            return abs(actualVolume - volume) <= 0.0001
+/// Why Brute cannot currently verify or change the microphone, for the UI.
+enum MicControlError: LocalizedError, Equatable {
+    case noInputDevice
+    case deviceControlsUnreadable
+    case writeFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .noInputDevice:
+            "No input device is selected. Check your Mac's Sound settings."
+        case .deviceControlsUnreadable:
+            "The selected input device is not responding to level controls."
+        case .writeFailed:
+            "Brute couldn’t change the selected microphone."
         }
     }
 }

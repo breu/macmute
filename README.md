@@ -13,11 +13,11 @@ The default shortcut is **Option–Command–M (⌥⌘M)**.
 - Two quick taps toggle twice. There are no modes or special double-click actions.
 - The main menu’s delay slider offers **0.2, 0.4, 0.6, 0.8, and 1.0 seconds**, defaulting to **0.4**. The selection is saved and applies to the next gesture.
 
-The menu shows microphone state, hotkey status, gesture help, the delay slider, **Preferences…**, **Brute Help…**, **About Brute**, and **Quit Brute**. All menu text uses white styling. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires Accessibility access.
+The menu shows microphone state, hotkey status, gesture help, the delay slider, **Preferences…**, **Brute Help…**, **About Brute**, and **Quit Brute**. The menu follows the system appearance. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires Accessibility access. Brute currently ships in English.
 
 **Brute Help…** opens the bundled [user guide](Resources/BruteHelp.html) offline in the system’s HTML viewer, normally a browser. This HTML file is the single source of user documentation and is included in Xcode builds and shell-built app bundles. Xcode’s generated Swift documentation is developer documentation and is separate from the user guide.
 
-Launching Brute preserves the existing microphone state. If you change the default input while muted, Brute carries the mute state to the new device. **Unavailable** means Brute cannot verify the microphone state.
+Launching Brute preserves the existing microphone state. If you change the default input while muted, Brute carries the mute state to the new device. When Brute cannot verify or change the microphone state, the menu explains what happened.
 
 ## State-change contract
 
@@ -29,6 +29,8 @@ Regression coverage includes the single-write-boundary source contract, tap/hold
 
 ## Build and run with Xcode
 
+Building from source requires Swift 6 or later, included in Xcode 16 and later.
+
 Open `Brute.xcodeproj` and select the shared **Brute** scheme.
 
 - **Product → Run** builds and launches the app.
@@ -37,11 +39,13 @@ Open `Brute.xcodeproj` and select the shared **Brute** scheme.
 
 Brute retains the `com.breu.macmute` bundle identifier so macOS and App Store Connect recognize it as the same app. The app target uses macOS 13.0, automatic signing with Breu Software LLC’s team (`6Q66ZYGK4J`), hardened runtime, and the Utilities category. Debug and Release use `Resources/Brute.entitlements`, enabling App Sandbox and Core Audio input access. Xcode copies `BruteHelp.html` into the app’s resources and generates the icon from `Resources/RaptorIcon.png`.
 
+Update the marketing and build versions in `Resources/Version.xcconfig`. Xcode and the shell packaging scripts read both values from this file. Brute also retains the legacy `MacMute.*` defaults keys to preserve saved shortcuts and microphone restoration data across upgrades.
+
 For App Store distribution, use the App Store distribution workflow in Organizer. An entitlement configuration or successful local build does not establish upload acceptance or sandboxed runtime behavior. See [publication checks](PUBLICATION.md).
 
 ## Shell builds and direct distribution
 
-Install Xcode Command Line Tools with `xcode-select --install` if needed.
+Install Swift 6 capable Xcode Command Line Tools with `xcode-select --install` if needed.
 
 ```sh
 ./Scripts/build_app.sh
@@ -67,14 +71,10 @@ swift test
 For strict concurrency and release coverage validation:
 
 ```sh
-swift test --enable-code-coverage \
-  -Xswiftc -strict-concurrency=complete \
-  -Xswiftc -warn-concurrency \
-  -Xswiftc -warnings-as-errors
-swift Scripts/check_coverage.swift "$(swift test --show-codecov-path)" 45.0
+bash Scripts/check_release.sh
 ```
 
-The coverage script also enforces per-file floors for critical components.
+The coverage script enforces an overall floor and separate floors for critical files. CI runs this same check, a strict SwiftPM release build, Xcode build and tests, and ShellCheck on the packaging scripts.
 
 ## Developer ID release packaging
 

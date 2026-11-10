@@ -5,14 +5,24 @@ import SwiftUI
 @MainActor
 final class PreferencesWindowController: NSWindowController {
 
-    convenience init() {
-        let view = PreferencesView()
+    init(
+        hotkeyManager: HotkeyManager,
+        launchManager: LaunchAtLoginManaging
+    ) {
+        let view = PreferencesView(model: PreferencesModel(
+            launchManager: launchManager,
+            hotkeyManager: hotkeyManager
+        ))
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Brute Preferences"
+        window.title = BruteStrings.preferencesWindowTitle
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 360, height: 240))
-        self.init(window: window)
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     func show() {
@@ -24,41 +34,43 @@ final class PreferencesWindowController: NSWindowController {
 
 @MainActor
 private struct PreferencesView: View {
-    @StateObject private var model = PreferencesModel()
+    @ObservedObject var model: PreferencesModel
     @State private var isRecording = false
 
     @State private var recorder = ShortcutRecorder()
 
-    private static let raptorIcon: NSImage? = {
+    private let icon: NSImage? = PreferencesView.loadIcon()
+
+    private static func loadIcon() -> NSImage? {
         guard let path = Bundle.main.path(forResource: "RaptorIcon", ofType: "png") else { return nil }
         return NSImage(contentsOfFile: path)
-    }()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                if let icon = Self.raptorIcon {
+                if let icon = icon {
                     Image(nsImage: icon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 48, height: 48)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                Text("Brute").font(.headline)
+                Text(BruteStrings.appName).font(.headline)
                 Spacer()
             }
 
             HStack {
-                Text("Hotkey Shortcut:")
+                Text(BruteStrings.hotkeyShortcutLabel)
                 Spacer()
-                Button(isRecording ? "Press keys…" : model.shortcutDisplay) {
+                Button(isRecording ? BruteStrings.recordingShortcut : model.shortcutDisplay) {
                     startRecording()
                 }
                 .frame(minWidth: 100)
             }
 
             Toggle(
-                "Launch at Login",
+                BruteStrings.launchAtLoginLabel,
                 isOn: Binding(
                     get: { model.launchAtLoginEnabled },
                     set: { model.updateLaunchAtLogin($0) }
@@ -90,7 +102,7 @@ private struct PreferencesView: View {
         .onAppear {
             model.refreshExternalState()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .bruteHotkeyRegistrationDidChange)) { _ in
+        .onReceive(model.hotkeyRegistrationChanges) { _ in
             model.refreshHotkeyState()
         }
     }
@@ -121,16 +133,18 @@ final class PreferencesModel: ObservableObject {
     private let launchManager: LaunchAtLoginManaging
     private let hotkeyManager: HotkeyManager
 
+    var hotkeyRegistrationChanges: NotificationCenter.Publisher {
+        NotificationCenter.default.publisher(for: .bruteHotkeyRegistrationDidChange, object: hotkeyManager)
+    }
+
     init(
-        launchManager: LaunchAtLoginManaging? = nil,
-        hotkeyManager: HotkeyManager? = nil
+        launchManager: LaunchAtLoginManaging,
+        hotkeyManager: HotkeyManager
     ) {
-        let resolvedLaunchManager = launchManager ?? LaunchAtLoginManager.shared
-        let resolvedHotkeyManager = hotkeyManager ?? HotkeyManager.shared
-        self.launchManager = resolvedLaunchManager
-        self.hotkeyManager = resolvedHotkeyManager
-        shortcutDisplay = resolvedHotkeyManager.currentShortcut.displayString
-        launchAtLoginEnabled = resolvedLaunchManager.isRequested
+        self.launchManager = launchManager
+        self.hotkeyManager = hotkeyManager
+        shortcutDisplay = hotkeyManager.currentShortcut.displayString
+        launchAtLoginEnabled = launchManager.isRequested
     }
 
     func refreshExternalState() {

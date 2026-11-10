@@ -7,34 +7,33 @@ This document separates completed implementation from checks that still require 
 - One microphone gesture controller and user state-write boundary; no alternate modes or double-click behavior.
 - Permanent tap toggle and temporary hold toggle with restoration on release.
 - Saved tap/hold delay from 0.2 to 1.0 seconds in 0.2-second increments.
-- Menu state/status, gesture help, white text, active Preferences/About/Quit actions, and an offline Help item.
+- Menu state and microphone diagnostics, gesture help, system appearance, an accessible delay slider, Preferences/About/Quit actions, and offline Help.
 - Bundled HTML help in both Xcode and shell app builds.
 - Brute app name and existing `com.breu.macmute` bundle identifier in both build paths.
 - macOS 13.0 deployment settings and Utilities app category.
 - Xcode Debug/Release sandbox configuration with Core Audio input entitlement.
-- Regression coverage for gesture timing, restoration, device handling, and the execution-path contract.
+- Regression coverage for gesture timing, restoration, device handling, feedback recovery, hotkey retries, and the execution-path contract.
+- A shared coverage gate for CI and Developer ID releases, and version metadata shared between Xcode and shell packaging.
 
 No separate backlog file exists in this repository. Completed work is recorded here rather than retained as open tasks.
 
 ## Verified locally in this cut
 
-- The 100-test suite passed during gesture consolidation.
-- The 82-test controller suite passed after the delay slider changes.
-- Subsequent menu and help changes compiled successfully.
-- Xcode Debug build succeeded with ad-hoc signing; its bundled help matched the source HTML.
-- The built Debug app’s signed sandbox and audio input entitlements were checked. This does not validate runtime functionality or App Store acceptance.
+- The shared release gate passed 127 tests with 55.26% overall line coverage. All critical-file floors passed, including click feedback at 49.09%.
+- The strict SwiftPM release build and ShellCheck passed. Xcode built the Release app with sandbox and audio input entitlements, and all 127 tests passed in its test host.
+- An ad-hoc shell build produced and verified Apple Silicon and Intel slices. The shell and Xcode bundles reported version and build 1.3.
 
 These are development checks. Repeat the applicable checks against the final distribution build.
 
 ## Before either distribution route
 
-- [ ] Run the strict test and coverage commands in README against the final source.
+- [ ] Run `bash Scripts/check_release.sh` against the final source.
 - [ ] Test taps in both starting states and holds at every delay stop; release must restore the prior state.
 - [ ] Verify shortcut registration, shortcut changes, and standalone fn permission behavior.
 - [ ] Verify state icons/menu text against live microphone behavior, including unavailable and reconnect states.
 - [ ] Verify default-device switching while muted, sleep/wake, feedback sound, and Launch at Login.
-- [ ] Check menu legibility, slider interaction, Preferences/About/Quit actions, and offline Help from the installed app.
-- [ ] Confirm version/build metadata in `Resources/Info.plist` is appropriate for the intended submission.
+- [ ] Check menu legibility in light and dark appearances, VoiceOver navigation, slider interaction, Preferences/About/Quit actions, and offline Help from the installed app.
+- [ ] Confirm the versions in `Resources/Version.xcconfig` are appropriate for the intended submission.
 
 ## App Store route
 

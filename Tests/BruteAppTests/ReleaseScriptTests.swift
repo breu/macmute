@@ -102,7 +102,7 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertFalse(fixture.appURL.exists)
     }
 
-    func testReleaseRejectsIdentityWhoseNameOnlyContainsCompanyName() throws {
+    func testReleaseRequiresTheExactDeveloperIDIdentityFromTheKeychain() throws {
         let fixture = try ReleaseFixture()
         defer { fixture.remove() }
         let result = try fixture.run(
@@ -112,7 +112,31 @@ final class ReleaseScriptTests: XCTestCase {
             ]
         )
         XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.output.contains("full Developer ID Application identity"))
+        XCTAssertTrue(result.output.contains("signing identity is not available in this keychain"))
+    }
+
+    func testReleaseRejectsDeveloperIDIdentityForAnotherTeam() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        let identity = "Developer ID Application: BreuSoftware LLC (ZZZZZ99999)"
+        let result = try fixture.run(
+            "Scripts/build_app.sh",
+            extraEnvironment: ["BRUTE_SIGNING_IDENTITY": identity, "FAKE_SECURITY_IDENTITY": identity]
+        )
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.output.contains("full Developer ID Application identity for the pinned team"))
+    }
+
+    func testReleaseAcceptsUpdatedDeveloperIDNameForThePinnedTeam() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        let identity = "Developer ID Application: Breu Software Updated Name (\(ReleaseFixture.teamID))"
+        let result = try fixture.run(
+            "Scripts/build_app.sh",
+            extraEnvironment: ["BRUTE_SIGNING_IDENTITY": identity, "FAKE_SECURITY_IDENTITY": identity]
+        )
+        XCTAssertEqual(result.status, 0, result.output)
+        XCTAssertTrue(fixture.appURL.exists)
     }
 
     func testSignedTeamIdentifierMustMatchPinnedValue() throws {
@@ -158,6 +182,8 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(log.components(separatedBy: "hdiutil verify").count - 1, 2)
         let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
         XCTAssertEqual(plist?["BruteSourceRevision"] as? String, ReleaseFixture.sourceRevision)
+        XCTAssertEqual(plist?["CFBundleShortVersionString"] as? String, "1.3")
+        XCTAssertEqual(plist?["CFBundleVersion"] as? String, "14.2")
     }
 
     func testReleaseRejectsUntrackedReleaseInput() throws {
@@ -355,7 +381,7 @@ private final class ReleaseFixture {
 
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        for script in ["build_app.sh", "build_dmg.sh", "check_coverage.swift"] {
+        for script in ["build_app.sh", "build_dmg.sh", "check_release.sh", "check_coverage.swift"] {
             try FileManager.default.copyItem(
                 at: repositoryRoot.appendingPathComponent("Scripts/\(script)"),
                 to: root.appendingPathComponent("Scripts/\(script)")
@@ -367,10 +393,12 @@ private final class ReleaseFixture {
         )
         try Data(Self.teamID.utf8).write(to: root.appendingPathComponent("Resources/BreuSoftwareTeamID.txt"))
         try Data("icon".utf8).write(to: root.appendingPathComponent("Resources/RaptorIcon.png"))
-        try Self.infoPlist.write(
-            to: root.appendingPathComponent("Resources/Info.plist"),
-            atomically: true,
-            encoding: .utf8
+        try FileManager.default.copyItem(
+            at: repositoryRoot.appendingPathComponent("Resources/Info.plist"),
+            to: root.appendingPathComponent("Resources/Info.plist")
+        )
+        try Data("MARKETING_VERSION = 1.3\nCURRENT_PROJECT_VERSION = 14.2\n".utf8).write(
+            to: root.appendingPathComponent("Resources/Version.xcconfig")
         )
         try installFakeTools()
     }
@@ -384,6 +412,7 @@ private final class ReleaseFixture {
         environment["BRUTE_RELEASE"] = "1"
         environment["BRUTE_SIGNING_IDENTITY"] = "Developer ID Application: BreuSoftware LLC (\(Self.teamID))"
         environment["BRUTE_NOTARY_PROFILE"] = "test-profile"
+        environment["FAKE_SECURITY_IDENTITY"] = environment["BRUTE_SIGNING_IDENTITY"]
         environment["FAKE_SIGNED_TEAM_ID"] = Self.teamID
         environment["FAKE_SOURCE_REVISION"] = Self.sourceRevision
         environment["FAKE_TOOL_LOG"] = logURL.path
@@ -423,7 +452,7 @@ private final class ReleaseFixture {
 
     private func installFakeTools() throws {
         try writeTool("security", body: """
-        printf '1) ABCDEF "Developer ID Application: BreuSoftware LLC (ABCDE12345)"\n'
+        printf '1) ABCDEF "%s"\n' "$FAKE_SECURITY_IDENTITY"
         """)
         try writeTool("git", body: """
         if [ "$1" = "rev-parse" ]; then echo "$FAKE_SOURCE_REVISION"; exit 0; fi
@@ -534,16 +563,6 @@ private final class ReleaseFixture {
         try Data(("#!/bin/sh\n" + body + "\n").utf8).write(to: url)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
-
-    private static let infoPlist = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0"><dict>
-    <key>CFBundleShortVersionString</key><string>1.3</string>
-    <key>CFBundleExecutable</key><string>Brute</string>
-    <key>CFBundleIdentifier</key><string>com.breu.macmute</string>
-    </dict></plist>
-    """
 }
 
 private extension URL {

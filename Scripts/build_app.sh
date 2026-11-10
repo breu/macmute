@@ -11,6 +11,7 @@ RELEASE_BUILD="${BRUTE_RELEASE:-${MACMUTE_RELEASE:-0}}"
 SIGNING_IDENTITY="${BRUTE_SIGNING_IDENTITY:-${MACMUTE_SIGNING_IDENTITY:--}}"
 REQUESTED_TEAM_ID="${BRUTE_TEAM_ID:-${MACMUTE_TEAM_ID:-}}"
 TEAM_ID_FILE="Resources/BreuSoftwareTeamID.txt"
+VERSION_FILE="Resources/Version.xcconfig"
 EXPECTED_TEAM_ID=""
 WORK_DIR=""
 TEMP_APP_BUNDLE=""
@@ -28,7 +29,20 @@ cleanup() {
 trap cleanup EXIT
 
 repository_inputs_are_clean() {
-    [[ -z "$(git status --porcelain --untracked-files=all -- Package.swift README.md Sources Tests Scripts Resources)" ]]
+    local status
+    status=$(git status --porcelain --untracked-files=all -- Package.swift README.md Sources Tests Scripts Resources) || return 1
+    [[ -z "${status}" ]]
+}
+
+read_version_setting() {
+    local key="$1"
+    local version
+    version=$(awk -v key="${key}" '$1 == key && $2 == "=" && NF == 3 { print $3 }' "${VERSION_FILE}") || return 1
+    if [[ ! "${version}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+        echo "error: expected one numeric ${key} in ${VERSION_FILE}" >&2
+        return 1
+    fi
+    printf '%s\n' "${version}"
 }
 
 require_pristine_release_inputs() {
@@ -61,14 +75,14 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
         echo "error: BRUTE_TEAM_ID does not match the repository-pinned BreuSoftware Team ID" >&2
         exit 1
     fi
-    if [[ "${SIGNING_IDENTITY}" != "Developer ID Application: BreuSoftware LLC (${EXPECTED_TEAM_ID})" ]] \
-        && [[ "${SIGNING_IDENTITY}" != "Developer ID Application: Breu Software LLC (${EXPECTED_TEAM_ID})" ]]; then
-        echo "error: release builds require BreuSoftware LLC's full Developer ID Application identity" >&2
+    identity_pattern='^Developer ID Application: [^[:cntrl:]"]+ \(([A-Z0-9]{10})\)$'
+    if [[ ! "${SIGNING_IDENTITY}" =~ ${identity_pattern} || "${BASH_REMATCH[1]}" != "${EXPECTED_TEAM_ID}" ]]; then
+        echo "error: release builds require a full Developer ID Application identity for the pinned team" >&2
         echo "set BRUTE_SIGNING_IDENTITY to the exact identity shown by security find-identity" >&2
         exit 1
     fi
     if ! security find-identity -v -p codesigning | grep -F -- "\"${SIGNING_IDENTITY}\"" >/dev/null; then
-        echo "error: the requested BreuSoftware LLC signing identity is not available in this keychain" >&2
+        echo "error: the requested Developer ID signing identity is not available in this keychain" >&2
         exit 1
     fi
     require_pristine_release_inputs
@@ -76,21 +90,16 @@ fi
 
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
     echo "==> Running strict release tests"
-    swift test --enable-code-coverage \
-      -Xswiftc -strict-concurrency=complete \
-      -Xswiftc -warn-concurrency \
-      -Xswiftc -warnings-as-errors
-    COVERAGE_JSON=$(swift test --show-codecov-path)
-    swift Scripts/check_coverage.swift "${COVERAGE_JSON}" 45.0
+    bash Scripts/check_release.sh
     require_pristine_release_inputs
 fi
 
+MARKETING_VERSION=$(read_version_setting MARKETING_VERSION)
+CURRENT_PROJECT_VERSION=$(read_version_setting CURRENT_PROJECT_VERSION)
+
 echo "==> Building universal release binary"
-swift build "${BUILD_ARGS[@]}" \
-  -Xswiftc -strict-concurrency=complete \
-  -Xswiftc -warn-concurrency \
-  -Xswiftc -warnings-as-errors
 BUILD_DIR=$(swift build "${BUILD_ARGS[@]}" --show-bin-path)
+swift build "${BUILD_ARGS[@]}" -Xswiftc -warnings-as-errors
 
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
     require_pristine_release_inputs
@@ -116,7 +125,10 @@ SOURCE_REVISION=$(git rev-parse --verify HEAD 2>/dev/null || echo development)
 if ! repository_inputs_are_clean 2>/dev/null; then
     SOURCE_REVISION="${SOURCE_REVISION}-dirty"
 fi
-/usr/libexec/PlistBuddy -c "Add :BruteSourceRevision string ${SOURCE_REVISION}" \
+/usr/libexec/PlistBuddy \
+  -c "Set :CFBundleShortVersionString ${MARKETING_VERSION}" \
+  -c "Set :CFBundleVersion ${CURRENT_PROJECT_VERSION}" \
+  -c "Add :BruteSourceRevision string ${SOURCE_REVISION}" \
   "${TEMP_APP_BUNDLE}/Contents/Info.plist"
 
 echo "==> Generating app icon"
