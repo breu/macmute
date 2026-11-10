@@ -53,7 +53,7 @@ enum LaunchAtLoginError: LocalizedError {
         case .requestFailed(let error):
             "Launch at Login could not be updated: \(error.localizedDescription)"
         case .requiresApproval:
-            "Approve MacMute in System Settings → General → Login Items."
+            "Approve Brute in System Settings → General → Login Items."
         case .stateDidNotChange:
             "macOS did not apply the requested Launch at Login setting."
         }
@@ -105,7 +105,7 @@ final class LaunchAtLoginManager: LaunchAtLoginManaging {
                 }
             }
         } catch {
-            NSLog("MacMute: failed to update launch-at-login state: \(error)")
+            NSLog("Brute: failed to update launch-at-login state: \(error)")
             return .failure(.requestFailed(error))
         }
 

@@ -1,4 +1,4 @@
-# Publication checks
+# Brute publication checks
 
 This document separates completed implementation from checks that still require a signed distribution build, a live microphone, or Apple’s services. It is not a release approval.
 
@@ -9,6 +9,7 @@ This document separates completed implementation from checks that still require 
 - Saved tap/hold delay from 0.2 to 1.0 seconds in 0.2-second increments.
 - Menu state/status, gesture help, white text, active Preferences/About/Quit actions, and an offline Help item.
 - Bundled HTML help in both Xcode and shell app builds.
+- Brute app name and existing `com.breu.macmute` bundle identifier in both build paths.
 - macOS 13.0 deployment settings and Utilities app category.
 - Xcode Debug/Release sandbox configuration with Core Audio input entitlement.
 - Regression coverage for gesture timing, restoration, device handling, and the execution-path contract.
@@ -41,6 +42,8 @@ These are development checks. Repeat the applicable checks against the final dis
 - [ ] Inspect the archive’s signed entitlements for sandbox and audio input access.
 - [ ] Repeat live feature checks in the signed sandboxed build; unsandboxed shell builds and fake-hardware tests do not cover this gate.
 - [ ] Validate and upload in Organizer; confirm the app-category and sandbox validation issues are resolved.
+- [ ] Verify the App Store listing name and bundle identifier match the Brute build.
+- [ ] Refresh the App Store screenshots from the Brute build before submitting.
 - [ ] Confirm Apple processing, metadata, and review status before describing the app as published.
 
 ## Direct-distribution route

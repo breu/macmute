@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "C13732C8E715C9BEE4FA51C9"
-               BuildableName = "MacMute.app"
-               BlueprintName = "MacMute"
-               ReferencedContainer = "container:MacMute.xcodeproj">
+               BuildableName = "Brute.app"
+               BlueprintName = "Brute"
+               ReferencedContainer = "container:Brute.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "64BCB755386F844C96A2A5B0"
-               BuildableName = "MacMuteAppTests.xctest"
-               BlueprintName = "MacMuteAppTests"
-               ReferencedContainer = "container:MacMute.xcodeproj">
+               BuildableName = "BruteAppTests.xctest"
+               BlueprintName = "BruteAppTests"
+               ReferencedContainer = "container:Brute.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "C13732C8E715C9BEE4FA51C9"
-            BuildableName = "MacMute.app"
-            BlueprintName = "MacMute"
-            ReferencedContainer = "container:MacMute.xcodeproj">
+            BuildableName = "Brute.app"
+            BlueprintName = "Brute"
+            ReferencedContainer = "container:Brute.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "C13732C8E715C9BEE4FA51C9"
-            BuildableName = "MacMute.app"
-            BlueprintName = "MacMute"
-            ReferencedContainer = "container:MacMute.xcodeproj">
+            BuildableName = "Brute.app"
+            BlueprintName = "Brute"
+            ReferencedContainer = "container:Brute.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

@@ -3,13 +3,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP_NAME="MacMute"
-EXECUTABLE_NAME="MacMuteApp"
-BUILD_DIR=".build/apple/Products/Release"
-APP_BUNDLE="${MACMUTE_APP_OUTPUT:-${APP_NAME}.app}"
-RELEASE_BUILD="${MACMUTE_RELEASE:-0}"
-SIGNING_IDENTITY="${MACMUTE_SIGNING_IDENTITY:--}"
-REQUESTED_TEAM_ID="${MACMUTE_TEAM_ID:-}"
+APP_NAME="Brute"
+EXECUTABLE_NAME="BruteApp"
+BUILD_ARGS=(-c release --arch arm64 --arch x86_64)
+APP_BUNDLE="${BRUTE_APP_OUTPUT:-${MACMUTE_APP_OUTPUT:-${APP_NAME}.app}}"
+RELEASE_BUILD="${BRUTE_RELEASE:-${MACMUTE_RELEASE:-0}}"
+SIGNING_IDENTITY="${BRUTE_SIGNING_IDENTITY:-${MACMUTE_SIGNING_IDENTITY:--}}"
+REQUESTED_TEAM_ID="${BRUTE_TEAM_ID:-${MACMUTE_TEAM_ID:-}}"
 TEAM_ID_FILE="Resources/BreuSoftwareTeamID.txt"
 EXPECTED_TEAM_ID=""
 WORK_DIR=""
@@ -43,7 +43,7 @@ require_pristine_release_inputs() {
 }
 
 if [[ "${RELEASE_BUILD}" != "0" && "${RELEASE_BUILD}" != "1" ]]; then
-    echo "error: MACMUTE_RELEASE must be exactly 0 or 1" >&2
+    echo "error: BRUTE_RELEASE must be exactly 0 or 1" >&2
     exit 1
 fi
 
@@ -58,13 +58,13 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
         exit 1
     fi
     if [[ -n "${REQUESTED_TEAM_ID}" && "${REQUESTED_TEAM_ID}" != "${EXPECTED_TEAM_ID}" ]]; then
-        echo "error: MACMUTE_TEAM_ID does not match the repository-pinned BreuSoftware Team ID" >&2
+        echo "error: BRUTE_TEAM_ID does not match the repository-pinned BreuSoftware Team ID" >&2
         exit 1
     fi
     if [[ "${SIGNING_IDENTITY}" != "Developer ID Application: BreuSoftware LLC (${EXPECTED_TEAM_ID})" ]] \
         && [[ "${SIGNING_IDENTITY}" != "Developer ID Application: Breu Software LLC (${EXPECTED_TEAM_ID})" ]]; then
         echo "error: release builds require BreuSoftware LLC's full Developer ID Application identity" >&2
-        echo "set MACMUTE_SIGNING_IDENTITY to the exact identity shown by security find-identity" >&2
+        echo "set BRUTE_SIGNING_IDENTITY to the exact identity shown by security find-identity" >&2
         exit 1
     fi
     if ! security find-identity -v -p codesigning | grep -F -- "\"${SIGNING_IDENTITY}\"" >/dev/null; then
@@ -86,16 +86,17 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
 fi
 
 echo "==> Building universal release binary"
-swift build -c release --arch arm64 --arch x86_64 \
+swift build "${BUILD_ARGS[@]}" \
   -Xswiftc -strict-concurrency=complete \
   -Xswiftc -warn-concurrency \
   -Xswiftc -warnings-as-errors
+BUILD_DIR=$(swift build "${BUILD_ARGS[@]}" --show-bin-path)
 
 if [[ "${RELEASE_BUILD}" == "1" ]]; then
     require_pristine_release_inputs
 fi
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/macmute-app-build.XXXXXX")"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/brute-app-build.XXXXXX")"
 TEMP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.app"
 BACKUP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.previous.app"
 mkdir -p "$(dirname "${APP_BUNDLE}")"
@@ -105,16 +106,17 @@ mkdir -p "${TEMP_APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${TEMP_APP_BUNDLE}/Contents/Resources"
 
 cp "${BUILD_DIR}/${EXECUTABLE_NAME}" "${TEMP_APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
-lipo "${TEMP_APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64 x86_64
+lipo "${TEMP_APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64
+lipo "${TEMP_APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch x86_64
 
-cp Resources/MacMuteHelp.html "${TEMP_APP_BUNDLE}/Contents/Resources/MacMuteHelp.html"
+cp Resources/BruteHelp.html "${TEMP_APP_BUNDLE}/Contents/Resources/BruteHelp.html"
 cp Resources/Info.plist "${TEMP_APP_BUNDLE}/Contents/Info.plist"
 cp Resources/RaptorIcon.png "${TEMP_APP_BUNDLE}/Contents/Resources/RaptorIcon.png"
 SOURCE_REVISION=$(git rev-parse --verify HEAD 2>/dev/null || echo development)
 if ! repository_inputs_are_clean 2>/dev/null; then
     SOURCE_REVISION="${SOURCE_REVISION}-dirty"
 fi
-/usr/libexec/PlistBuddy -c "Add :MacMuteSourceRevision string ${SOURCE_REVISION}" \
+/usr/libexec/PlistBuddy -c "Add :BruteSourceRevision string ${SOURCE_REVISION}" \
   "${TEMP_APP_BUNDLE}/Contents/Info.plist"
 
 echo "==> Generating app icon"
@@ -146,7 +148,7 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
     ACTUAL_TEAM_ID=$(codesign -dv --verbose=4 "${TEMP_APP_BUNDLE}" 2>&1 \
       | awk -F= '/^TeamIdentifier=/{print $2; exit}')
     if [[ "${ACTUAL_TEAM_ID}" != "${EXPECTED_TEAM_ID}" ]]; then
-        echo "error: signed app TeamIdentifier '${ACTUAL_TEAM_ID}' does not match MACMUTE_TEAM_ID" >&2
+        echo "error: signed app TeamIdentifier '${ACTUAL_TEAM_ID}' does not match BRUTE_TEAM_ID" >&2
         exit 1
     fi
 fi

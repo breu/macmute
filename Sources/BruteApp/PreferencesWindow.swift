@@ -9,7 +9,7 @@ final class PreferencesWindowController: NSWindowController {
         let view = PreferencesView()
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "MacMute Preferences"
+        window.title = "Brute Preferences"
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 360, height: 240))
         self.init(window: window)
@@ -44,7 +44,7 @@ private struct PreferencesView: View {
                         .frame(width: 48, height: 48)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                Text("MacMute").font(.headline)
+                Text("Brute").font(.headline)
                 Spacer()
             }
 
@@ -90,7 +90,7 @@ private struct PreferencesView: View {
         .onAppear {
             model.refreshExternalState()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .macMuteHotkeyRegistrationDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .bruteHotkeyRegistrationDidChange)) { _ in
             model.refreshHotkeyState()
         }
     }

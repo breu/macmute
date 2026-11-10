@@ -11,11 +11,11 @@ DerivedData/
 *.xcresult/
 
 # Build output of Scripts/build_app.sh and Scripts/build_dmg.sh
-/MacMute.app
-/MacMute-*.dmg
+/*.app
+/*.dmg
 /.dmg_staging
-/.macmute-app-build.*
-/.macmute-dmg-build.*
+/brute-app-build.*
+/brute-dmg-build.*
 
 # macOS
 .DS_Store

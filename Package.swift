@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "MacMuteApp",
+    name: "BruteApp",
     platforms: [
         .macOS(.v13)
     ],
     targets: [
         .executableTarget(
-            name: "MacMuteApp",
-            path: "Sources/MacMuteApp"
+            name: "BruteApp",
+            path: "Sources/BruteApp"
         ),
         .testTarget(
-            name: "MacMuteAppTests",
-            dependencies: ["MacMuteApp"]
+            name: "BruteAppTests",
+            dependencies: ["BruteApp"]
         )
     ]
 )

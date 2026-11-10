@@ -7,19 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        A0B1C2D3E4F5061728394051 /* MacMuteHelp.html in Resources */ = {isa = PBXBuildFile; fileRef = A0B1C2D3E4F5061728394050; };
-		0978A5A4F85C7361893A41E5 /* Sources/MacMuteApp/MicMuteController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4165FACED749201B1DF3D6 /* Sources/MacMuteApp/MicMuteController.swift */; };
-		54C0D2410748EE4E54C3F0CD /* Sources/MacMuteApp/AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9834A51247CBE7FF93B60A7F /* Sources/MacMuteApp/AppDelegate.swift */; };
-		5A4EC18E4951F47942EBD308 /* Sources/MacMuteApp/ClickSoundPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64839B49AB397A5C3A35C7B /* Sources/MacMuteApp/ClickSoundPlayer.swift */; };
-		63AB3ED8DD3C16412B50765E /* Sources/MacMuteApp/HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4A51C7D6B8CDC9CA52D327 /* Sources/MacMuteApp/HotkeyManager.swift */; };
-		67283661A259879923BCB7CD /* Sources/MacMuteApp/MicrophoneActionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 973BD5A2305BDA82AA192E4A /* Sources/MacMuteApp/MicrophoneActionController.swift */; };
-		68CB5C07DAB2DB2C7B51D3CB /* Tests/MacMuteAppTests/MicMuteControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632A0C32EBC2CD51D84FF342 /* Tests/MacMuteAppTests/MicMuteControllerTests.swift */; };
+        A0B1C2D3E4F5061728394051 /* BruteHelp.html in Resources */ = {isa = PBXBuildFile; fileRef = A0B1C2D3E4F5061728394050; };
+		0978A5A4F85C7361893A41E5 /* Sources/BruteApp/MicMuteController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */; };
+		54C0D2410748EE4E54C3F0CD /* Sources/BruteApp/AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */; };
+		5A4EC18E4951F47942EBD308 /* Sources/BruteApp/ClickSoundPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */; };
+		63AB3ED8DD3C16412B50765E /* Sources/BruteApp/HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */; };
+		67283661A259879923BCB7CD /* Sources/BruteApp/MicrophoneActionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 973BD5A2305BDA82AA192E4A /* Sources/BruteApp/MicrophoneActionController.swift */; };
+		68CB5C07DAB2DB2C7B51D3CB /* Tests/BruteAppTests/MicMuteControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632A0C32EBC2CD51D84FF342 /* Tests/BruteAppTests/MicMuteControllerTests.swift */; };
 		74C2431FE30C4A47C8443B80 /* Resources/RaptorIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */; };
-		AFAB677187F67732C8CC4A38 /* Sources/MacMuteApp/MacMuteApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD5C23026C0D59AE6B6C81 /* Sources/MacMuteApp/MacMuteApplication.swift */; };
-		C0BC9BAA7CB650194C07BF2F /* Sources/MacMuteApp/PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874924BE6C9B0F6855C1D63C /* Sources/MacMuteApp/PreferencesWindow.swift */; };
-		CC070515EB886D43CB13D9D4 /* Tests/MacMuteAppTests/ReleaseScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15B676969A5E7D9E12E652A /* Tests/MacMuteAppTests/ReleaseScriptTests.swift */; };
-		D90F8BD9B78B4D88B46E0D1D /* Sources/MacMuteApp/StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCE670E24B70CFE507AFAE8 /* Sources/MacMuteApp/StatusBarController.swift */; };
-		FF00A107DDE7181CA7E31724 /* Sources/MacMuteApp/LaunchAtLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711E0CD81FA22FA279410FCF /* Sources/MacMuteApp/LaunchAtLoginManager.swift */; };
+		AFAB677187F67732C8CC4A38 /* Sources/BruteApp/BruteApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */; };
+		C0BC9BAA7CB650194C07BF2F /* Sources/BruteApp/PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874924BE6C9B0F6855C1D63C /* Sources/BruteApp/PreferencesWindow.swift */; };
+		CC070515EB886D43CB13D9D4 /* Tests/BruteAppTests/ReleaseScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15B676969A5E7D9E12E652A /* Tests/BruteAppTests/ReleaseScriptTests.swift */; };
+		D90F8BD9B78B4D88B46E0D1D /* Sources/BruteApp/StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */; };
+		FF00A107DDE7181CA7E31724 /* Sources/BruteApp/LaunchAtLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,27 +28,27 @@
 			containerPortal = 98F54143AB4E86B28C3AFEE0 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = C13732C8E715C9BEE4FA51C9;
-			remoteInfo = MacMute;
+			remoteInfo = Brute;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-        A0B1C2D3E4F5061728394050 /* MacMuteHelp.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Resources/MacMuteHelp.html; sourceTree = SOURCE_ROOT; };
+        A0B1C2D3E4F5061728394050 /* BruteHelp.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Resources/BruteHelp.html; sourceTree = SOURCE_ROOT; };
 		59BD0A3FF43B32849B319E64 /* Resources/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = SOURCE_ROOT; };
-		632A0C32EBC2CD51D84FF342 /* Tests/MacMuteAppTests/MicMuteControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/MacMuteAppTests/MicMuteControllerTests.swift; sourceTree = SOURCE_ROOT; };
-		711E0CD81FA22FA279410FCF /* Sources/MacMuteApp/LaunchAtLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/LaunchAtLoginManager.swift; sourceTree = SOURCE_ROOT; };
-		874924BE6C9B0F6855C1D63C /* Sources/MacMuteApp/PreferencesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/PreferencesWindow.swift; sourceTree = SOURCE_ROOT; };
-		8BCD5BC4CDFDF0918087C782 /* MacMute.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = MacMute.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		973BD5A2305BDA82AA192E4A /* Sources/MacMuteApp/MicrophoneActionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/MicrophoneActionController.swift; sourceTree = SOURCE_ROOT; };
-		9834A51247CBE7FF93B60A7F /* Sources/MacMuteApp/AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/AppDelegate.swift; sourceTree = SOURCE_ROOT; };
-		A15B676969A5E7D9E12E652A /* Tests/MacMuteAppTests/ReleaseScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/MacMuteAppTests/ReleaseScriptTests.swift; sourceTree = SOURCE_ROOT; };
-		AADD5C23026C0D59AE6B6C81 /* Sources/MacMuteApp/MacMuteApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/MacMuteApplication.swift; sourceTree = SOURCE_ROOT; };
-		ABCE670E24B70CFE507AFAE8 /* Sources/MacMuteApp/StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/StatusBarController.swift; sourceTree = SOURCE_ROOT; };
-		D64839B49AB397A5C3A35C7B /* Sources/MacMuteApp/ClickSoundPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/ClickSoundPlayer.swift; sourceTree = SOURCE_ROOT; };
-		EF4A51C7D6B8CDC9CA52D327 /* Sources/MacMuteApp/HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/HotkeyManager.swift; sourceTree = SOURCE_ROOT; };
-		F219C0274590DA45E4BEF1EA /* MacMuteAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = MacMuteAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		632A0C32EBC2CD51D84FF342 /* Tests/BruteAppTests/MicMuteControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/MicMuteControllerTests.swift; sourceTree = SOURCE_ROOT; };
+		711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/LaunchAtLoginManager.swift; sourceTree = SOURCE_ROOT; };
+		874924BE6C9B0F6855C1D63C /* Sources/BruteApp/PreferencesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/PreferencesWindow.swift; sourceTree = SOURCE_ROOT; };
+		8BCD5BC4CDFDF0918087C782 /* Brute.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Brute.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		973BD5A2305BDA82AA192E4A /* Sources/BruteApp/MicrophoneActionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicrophoneActionController.swift; sourceTree = SOURCE_ROOT; };
+		9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/AppDelegate.swift; sourceTree = SOURCE_ROOT; };
+		A15B676969A5E7D9E12E652A /* Tests/BruteAppTests/ReleaseScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/ReleaseScriptTests.swift; sourceTree = SOURCE_ROOT; };
+		AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteApplication.swift; sourceTree = SOURCE_ROOT; };
+		ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/StatusBarController.swift; sourceTree = SOURCE_ROOT; };
+		D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/ClickSoundPlayer.swift; sourceTree = SOURCE_ROOT; };
+		EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/HotkeyManager.swift; sourceTree = SOURCE_ROOT; };
+		F219C0274590DA45E4BEF1EA /* BruteAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = BruteAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Resources/RaptorIcon.png; sourceTree = SOURCE_ROOT; };
-		FC4165FACED749201B1DF3D6 /* Sources/MacMuteApp/MicMuteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MacMuteApp/MicMuteController.swift; sourceTree = SOURCE_ROOT; };
+		FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicMuteController.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,7 +72,7 @@
 		0189424A5A60FED329FA868E /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				A0B1C2D3E4F5061728394050 /* MacMuteHelp.html */,
+				A0B1C2D3E4F5061728394050 /* BruteHelp.html */,
                 59BD0A3FF43B32849B319E64 /* Resources/Info.plist */,
 				F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */,
 			);
@@ -82,8 +82,8 @@
 		04D13FD0AA6F0197CF2C9990 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				632A0C32EBC2CD51D84FF342 /* Tests/MacMuteAppTests/MicMuteControllerTests.swift */,
-				A15B676969A5E7D9E12E652A /* Tests/MacMuteAppTests/ReleaseScriptTests.swift */,
+				632A0C32EBC2CD51D84FF342 /* Tests/BruteAppTests/MicMuteControllerTests.swift */,
+				A15B676969A5E7D9E12E652A /* Tests/BruteAppTests/ReleaseScriptTests.swift */,
 			);
 			name = Tests;
 			sourceTree = "<group>";
@@ -91,15 +91,15 @@
 		BCE16DD0260827ECF338C787 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				9834A51247CBE7FF93B60A7F /* Sources/MacMuteApp/AppDelegate.swift */,
-				D64839B49AB397A5C3A35C7B /* Sources/MacMuteApp/ClickSoundPlayer.swift */,
-				EF4A51C7D6B8CDC9CA52D327 /* Sources/MacMuteApp/HotkeyManager.swift */,
-				711E0CD81FA22FA279410FCF /* Sources/MacMuteApp/LaunchAtLoginManager.swift */,
-				AADD5C23026C0D59AE6B6C81 /* Sources/MacMuteApp/MacMuteApplication.swift */,
-				FC4165FACED749201B1DF3D6 /* Sources/MacMuteApp/MicMuteController.swift */,
-				874924BE6C9B0F6855C1D63C /* Sources/MacMuteApp/PreferencesWindow.swift */,
-				973BD5A2305BDA82AA192E4A /* Sources/MacMuteApp/MicrophoneActionController.swift */,
-				ABCE670E24B70CFE507AFAE8 /* Sources/MacMuteApp/StatusBarController.swift */,
+				9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */,
+				D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */,
+				EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */,
+				711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */,
+				AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */,
+				FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */,
+				874924BE6C9B0F6855C1D63C /* Sources/BruteApp/PreferencesWindow.swift */,
+				973BD5A2305BDA82AA192E4A /* Sources/BruteApp/MicrophoneActionController.swift */,
+				ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -117,8 +117,8 @@
 		FBDC4F23F93125BBEEAE800C /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8BCD5BC4CDFDF0918087C782 /* MacMute.app */,
-				F219C0274590DA45E4BEF1EA /* MacMuteAppTests.xctest */,
+				8BCD5BC4CDFDF0918087C782 /* Brute.app */,
+				F219C0274590DA45E4BEF1EA /* BruteAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -126,9 +126,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		64BCB755386F844C96A2A5B0 /* MacMuteAppTests */ = {
+		64BCB755386F844C96A2A5B0 /* BruteAppTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = BECB265224D91761C05FDA33 /* Build configuration list for PBXNativeTarget "MacMuteAppTests" */;
+			buildConfigurationList = BECB265224D91761C05FDA33 /* Build configuration list for PBXNativeTarget "BruteAppTests" */;
 			buildPhases = (
 				6E431EB0650617AA1756B320 /* Sources */,
 				1ABF84E55BD30AC2CEF8FC42 /* Frameworks */,
@@ -138,14 +138,14 @@
 			dependencies = (
 				DE58E2B17C19600779694943 /* PBXTargetDependency */,
 			);
-			name = MacMuteAppTests;
-			productName = MacMuteAppTests;
-			productReference = F219C0274590DA45E4BEF1EA /* MacMuteAppTests.xctest */;
+			name = BruteAppTests;
+			productName = BruteAppTests;
+			productReference = F219C0274590DA45E4BEF1EA /* BruteAppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		C13732C8E715C9BEE4FA51C9 /* MacMute */ = {
+		C13732C8E715C9BEE4FA51C9 /* Brute */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F37922C48DA5978D02C9E50E /* Build configuration list for PBXNativeTarget "MacMute" */;
+			buildConfigurationList = F37922C48DA5978D02C9E50E /* Build configuration list for PBXNativeTarget "Brute" */;
 			buildPhases = (
 				971ED9D05B25DB6C4D7680D4 /* Sources */,
 				78AE8C6BEB2A40A6D824CCEE /* Frameworks */,
@@ -156,9 +156,9 @@
 			);
 			dependencies = (
 			);
-			name = MacMute;
-			productName = MacMute;
-			productReference = 8BCD5BC4CDFDF0918087C782 /* MacMute.app */;
+			name = Brute;
+			productName = Brute;
+			productReference = 8BCD5BC4CDFDF0918087C782 /* Brute.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -170,7 +170,7 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2700;
 			};
-			buildConfigurationList = 862894B703A6DEDF96A9DD6C /* Build configuration list for PBXProject "MacMute" */;
+			buildConfigurationList = 862894B703A6DEDF96A9DD6C /* Build configuration list for PBXProject "Brute" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -183,8 +183,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C13732C8E715C9BEE4FA51C9 /* MacMute */,
-				64BCB755386F844C96A2A5B0 /* MacMuteAppTests */,
+				C13732C8E715C9BEE4FA51C9 /* Brute */,
+				64BCB755386F844C96A2A5B0 /* BruteAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -194,7 +194,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A0B1C2D3E4F5061728394051 /* MacMuteHelp.html in Resources */,
+				A0B1C2D3E4F5061728394051 /* BruteHelp.html in Resources */,
                 74C2431FE30C4A47C8443B80 /* Resources/RaptorIcon.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -225,8 +225,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				68CB5C07DAB2DB2C7B51D3CB /* Tests/MacMuteAppTests/MicMuteControllerTests.swift in Sources */,
-				CC070515EB886D43CB13D9D4 /* Tests/MacMuteAppTests/ReleaseScriptTests.swift in Sources */,
+				68CB5C07DAB2DB2C7B51D3CB /* Tests/BruteAppTests/MicMuteControllerTests.swift in Sources */,
+				CC070515EB886D43CB13D9D4 /* Tests/BruteAppTests/ReleaseScriptTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -234,15 +234,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				54C0D2410748EE4E54C3F0CD /* Sources/MacMuteApp/AppDelegate.swift in Sources */,
-				5A4EC18E4951F47942EBD308 /* Sources/MacMuteApp/ClickSoundPlayer.swift in Sources */,
-				63AB3ED8DD3C16412B50765E /* Sources/MacMuteApp/HotkeyManager.swift in Sources */,
-				FF00A107DDE7181CA7E31724 /* Sources/MacMuteApp/LaunchAtLoginManager.swift in Sources */,
-				AFAB677187F67732C8CC4A38 /* Sources/MacMuteApp/MacMuteApplication.swift in Sources */,
-				0978A5A4F85C7361893A41E5 /* Sources/MacMuteApp/MicMuteController.swift in Sources */,
-				C0BC9BAA7CB650194C07BF2F /* Sources/MacMuteApp/PreferencesWindow.swift in Sources */,
-				67283661A259879923BCB7CD /* Sources/MacMuteApp/MicrophoneActionController.swift in Sources */,
-				D90F8BD9B78B4D88B46E0D1D /* Sources/MacMuteApp/StatusBarController.swift in Sources */,
+				54C0D2410748EE4E54C3F0CD /* Sources/BruteApp/AppDelegate.swift in Sources */,
+				5A4EC18E4951F47942EBD308 /* Sources/BruteApp/ClickSoundPlayer.swift in Sources */,
+				63AB3ED8DD3C16412B50765E /* Sources/BruteApp/HotkeyManager.swift in Sources */,
+				FF00A107DDE7181CA7E31724 /* Sources/BruteApp/LaunchAtLoginManager.swift in Sources */,
+				AFAB677187F67732C8CC4A38 /* Sources/BruteApp/BruteApplication.swift in Sources */,
+				0978A5A4F85C7361893A41E5 /* Sources/BruteApp/MicMuteController.swift in Sources */,
+				C0BC9BAA7CB650194C07BF2F /* Sources/BruteApp/PreferencesWindow.swift in Sources */,
+				67283661A259879923BCB7CD /* Sources/BruteApp/MicrophoneActionController.swift in Sources */,
+				D90F8BD9B78B4D88B46E0D1D /* Sources/BruteApp/StatusBarController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -251,7 +251,7 @@
 /* Begin PBXTargetDependency section */
 		DE58E2B17C19600779694943 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = C13732C8E715C9BEE4FA51C9 /* MacMute */;
+			target = C13732C8E715C9BEE4FA51C9 /* Brute */;
 			targetProxy = D799BAE6088A90139B415FCC /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -266,7 +266,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_APP_SANDBOX = YES;
-				CODE_SIGN_ENTITLEMENTS = Resources/MacMute.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Resources/Brute.entitlements;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -274,8 +274,8 @@
 				INFOPLIST_FILE = Resources/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.breu.macmute;
-				PRODUCT_MODULE_NAME = MacMuteApp;
-				PRODUCT_NAME = MacMute;
+				PRODUCT_MODULE_NAME = BruteApp;
+				PRODUCT_NAME = Brute;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
 			name = Release;
@@ -339,7 +339,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.breu.macmute.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacMute.app/Contents/MacOS/MacMute";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Brute.app/Contents/MacOS/Brute";
 			};
 			name = Release;
 		};
@@ -396,7 +396,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_APP_SANDBOX = YES;
-				CODE_SIGN_ENTITLEMENTS = Resources/MacMute.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Resources/Brute.entitlements;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -404,8 +404,8 @@
 				INFOPLIST_FILE = Resources/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.breu.macmute;
-				PRODUCT_MODULE_NAME = MacMuteApp;
-				PRODUCT_NAME = MacMute;
+				PRODUCT_MODULE_NAME = BruteApp;
+				PRODUCT_NAME = Brute;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -426,14 +426,14 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacMute.app/Contents/MacOS/MacMute";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Brute.app/Contents/MacOS/Brute";
 			};
 			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		862894B703A6DEDF96A9DD6C /* Build configuration list for PBXProject "MacMute" */ = {
+		862894B703A6DEDF96A9DD6C /* Build configuration list for PBXProject "Brute" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				89E1FD6268CC0F221A2BE178 /* Debug */,
@@ -442,7 +442,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		BECB265224D91761C05FDA33 /* Build configuration list for PBXNativeTarget "MacMuteAppTests" */ = {
+		BECB265224D91761C05FDA33 /* Build configuration list for PBXNativeTarget "BruteAppTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				FCB48D8F88BCDB0ED9FADFD7 /* Debug */,
@@ -451,7 +451,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F37922C48DA5978D02C9E50E /* Build configuration list for PBXNativeTarget "MacMute" */ = {
+		F37922C48DA5978D02C9E50E /* Build configuration list for PBXNativeTarget "Brute" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				E9B2E96ABC5F6856F2BE79CF /* Debug */,

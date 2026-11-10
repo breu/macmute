@@ -24,7 +24,7 @@ final class StatusBarController {
             self?.updateMicrophoneState(state)
         }
         NotificationCenter.default.addObserver(
-            forName: .macMuteHotkeyRegistrationDidChange,
+            forName: .bruteHotkeyRegistrationDidChange,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -86,19 +86,19 @@ final class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
-        let helpItem = NSMenuItem(title: "MacMute Help…", action: #selector(openHelp), keyEquivalent: "")
+        let helpItem = NSMenuItem(title: "Brute Help…", action: #selector(openHelp), keyEquivalent: "")
         helpItem.target = self
         menu.addItem(helpItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        let aboutItem = NSMenuItem(title: "About MacMute", action: #selector(showAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Brute", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit MacMute", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Brute", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -160,10 +160,10 @@ final class StatusBarController {
     }
 
     @objc private func openHelp() {
-        guard let url = Bundle.main.url(forResource: "MacMuteHelp", withExtension: "html"),
+        guard let url = Bundle.main.url(forResource: "BruteHelp", withExtension: "html"),
               NSWorkspace.shared.open(url) else {
             let alert = NSAlert()
-            alert.messageText = "MacMute Help could not be opened"
+            alert.messageText = "Brute Help could not be opened"
             alert.informativeText = "The bundled user guide is unavailable or no app can open HTML files."
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
@@ -176,9 +176,9 @@ final class StatusBarController {
             ?? "Development"
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "MacMute",
+            .applicationName: "Brute",
             .applicationVersion: version,
-            .credits: NSAttributedString(string: "Mutes the current default input device for apps that use it. Apps that explicitly select another input are outside MacMute's control.\n\nWritten by Joe Breu.")
+            .credits: NSAttributedString(string: "Mutes the current default input device for apps that use it. Apps that explicitly select another input are outside Brute's control.\n\nWritten by Joe Breu.")
         ])
     }
 

@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-struct MacMuteApplication {
+struct BruteApplication {
     @MainActor
     static func main() {
         let app = NSApplication.shared

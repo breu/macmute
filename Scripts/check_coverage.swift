@@ -39,7 +39,7 @@ do {
         guard let files = run["files"] as? [[String: Any]] else { continue }
         for file in files {
             guard let filename = file["filename"] as? String,
-                  filename.contains("/Sources/MacMuteApp/"),
+                  filename.contains("/Sources/BruteApp/"),
                   let summary = file["summary"] as? [String: Any],
                   let lines = summary["lines"] as? [String: Any],
                   let count = lines["count"] as? Int,
@@ -57,11 +57,11 @@ do {
     }
 
     guard sourceFiles > 0, executableLines > 0 else {
-        throw CoverageError(description: "coverage report contains no MacMute source lines")
+        throw CoverageError(description: "coverage report contains no Brute source lines")
     }
 
     let percent = Double(coveredLines) * 100 / Double(executableLines)
-    print(String(format: "MacMute source coverage: %.2f%% (%d/%d lines)", percent, coveredLines, executableLines))
+    print(String(format: "Brute source coverage: %.2f%% (%d/%d lines)", percent, coveredLines, executableLines))
     guard percent >= minimumPercent else {
         throw CoverageError(
             description: String(format: "source coverage %.2f%% is below the %.2f%% release floor", percent, minimumPercent)

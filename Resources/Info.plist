@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>MacMute</string>
+    <string>Brute</string>
     <key>CFBundleDisplayName</key>
-    <string>MacMute</string>
+    <string>Brute</string>
     <key>CFBundleIdentifier</key>
     <string>com.breu.macmute</string>
     <key>CFBundleVersion</key>
@@ -15,7 +15,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>MacMute</string>
+    <string>Brute</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
@@ -27,6 +27,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>MacMute adjusts your microphone's system input level to mute it. It does not record or transmit any audio.</string>
+    <string>Brute adjusts your microphone's system input level to mute it. It does not record or transmit any audio.</string>
 </dict>
 </plist>

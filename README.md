@@ -1,10 +1,10 @@
-# MacMute
+# Brute
 
-MacMute is a macOS menu bar utility that mutes the current default input device. Apps using that microphone share its mute state. An app that explicitly selects another microphone is unaffected. MacMute does not record or transmit audio.
+Brute is a macOS menu bar utility that mutes the current default input device. Apps using that microphone share its mute state. An app that explicitly selects another microphone is unaffected. Brute does not record or transmit audio.
 
 Requires macOS 13 or later. The app has no Dock icon or main window; look for the microphone icon in the menu bar.
 
-## Using MacMute
+## Using Brute
 
 The default shortcut is **Option–Command–M (⌥⌘M)**.
 
@@ -13,11 +13,11 @@ The default shortcut is **Option–Command–M (⌥⌘M)**.
 - Two quick taps toggle twice. There are no modes or special double-click actions.
 - The main menu’s delay slider offers **0.2, 0.4, 0.6, 0.8, and 1.0 seconds**, defaulting to **0.4**. The selection is saved and applies to the next gesture.
 
-The menu shows microphone state, hotkey status, gesture help, the delay slider, **Preferences…**, **MacMute Help…**, **About MacMute**, and **Quit MacMute**. All menu text uses white styling. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires Accessibility access.
+The menu shows microphone state, hotkey status, gesture help, the delay slider, **Preferences…**, **Brute Help…**, **About Brute**, and **Quit Brute**. All menu text uses white styling. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires Accessibility access.
 
-**MacMute Help…** opens the bundled [user guide](Resources/MacMuteHelp.html) offline in the system’s HTML viewer, normally a browser. This HTML file is the single source of user documentation and is included in Xcode builds and shell-built app bundles. Xcode’s generated Swift documentation is developer documentation and is separate from the user guide.
+**Brute Help…** opens the bundled [user guide](Resources/BruteHelp.html) offline in the system’s HTML viewer, normally a browser. This HTML file is the single source of user documentation and is included in Xcode builds and shell-built app bundles. Xcode’s generated Swift documentation is developer documentation and is separate from the user guide.
 
-Launching MacMute preserves the existing microphone state. If you change the default input while muted, MacMute carries the mute state to the new device. **Unavailable** means MacMute cannot verify the microphone state.
+Launching Brute preserves the existing microphone state. If you change the default input while muted, Brute carries the mute state to the new device. **Unavailable** means Brute cannot verify the microphone state.
 
 ## State-change contract
 
@@ -29,13 +29,13 @@ Regression coverage includes the single-write-boundary source contract, tap/hold
 
 ## Build and run with Xcode
 
-Open `MacMute.xcodeproj` and select the shared **MacMute** scheme:
+Open `Brute.xcodeproj` and select the shared **Brute** scheme.
 
 - **Product → Run** builds and launches the app.
 - **Product → Test** runs the native test target.
 - **Product → Archive** creates an archive for distribution.
 
-The app target uses macOS 13.0, automatic signing with Breu Software LLC’s team (`6Q66ZYGK4J`), hardened runtime, and the Utilities category. Debug and Release use `Resources/MacMute.entitlements`, enabling App Sandbox and Core Audio input access. Xcode copies `MacMuteHelp.html` into the app’s resources and generates the icon from `Resources/RaptorIcon.png`.
+Brute retains the `com.breu.macmute` bundle identifier so macOS and App Store Connect recognize it as the same app. The app target uses macOS 13.0, automatic signing with Breu Software LLC’s team (`6Q66ZYGK4J`), hardened runtime, and the Utilities category. Debug and Release use `Resources/Brute.entitlements`, enabling App Sandbox and Core Audio input access. Xcode copies `BruteHelp.html` into the app’s resources and generates the icon from `Resources/RaptorIcon.png`.
 
 For App Store distribution, use the App Store distribution workflow in Organizer. An entitlement configuration or successful local build does not establish upload acceptance or sandboxed runtime behavior. See [publication checks](PUBLICATION.md).
 
@@ -45,10 +45,10 @@ Install Xcode Command Line Tools with `xcode-select --install` if needed.
 
 ```sh
 ./Scripts/build_app.sh
-open MacMute.app
+open Brute.app
 ```
 
-The script builds a universal Apple Silicon/Intel release executable, assembles the app and help resource, and signs it ad hoc for local development. It does not apply the Xcode target’s sandbox entitlements. Building or launching does not itself toggle the microphone.
+The script builds the universal Apple Silicon/Intel `BruteApp` release executable, assembles the app and help resource, and signs it ad hoc for local development. It does not apply the Xcode target’s sandbox entitlements. Building or launching does not itself toggle the microphone.
 
 To create a local installation disk image:
 
@@ -56,7 +56,7 @@ To create a local installation disk image:
 ./Scripts/build_dmg.sh
 ```
 
-Open `MacMute-<version>.dmg` and drag MacMute into Applications. A stable installation location is recommended for Launch at Login.
+Open `Brute-<version>.dmg` and drag Brute into Applications. A stable installation location is recommended for Launch at Login.
 
 Run the regression suite with:
 
@@ -83,13 +83,15 @@ The shell release pipeline is for direct distribution, using a Breu Software LLC
 Store notarization credentials in Keychain with `xcrun notarytool store-credentials`, then supply the exact signing identity and saved profile:
 
 ```sh
-export MACMUTE_RELEASE=1
-export MACMUTE_SIGNING_IDENTITY='Developer ID Application: Breu Software LLC (6Q66ZYGK4J)'
-export MACMUTE_NOTARY_PROFILE='breusoftware-notary'
+export BRUTE_RELEASE=1
+export BRUTE_SIGNING_IDENTITY='Developer ID Application: Breu Software LLC (6Q66ZYGK4J)'
+export BRUTE_NOTARY_PROFILE='breusoftware-notary'
 ./Scripts/build_dmg.sh
 ```
 
-The profile name is an example; use the one saved in your Keychain. `Resources/BreuSoftwareTeamID.txt` pins the team. If supplied, `MACMUTE_TEAM_ID` must match it.
+The profile name is an example; use the one saved in your Keychain. `Resources/BreuSoftwareTeamID.txt` pins the team. If supplied, `BRUTE_TEAM_ID` must match it.
+
+The scripts accept the legacy `MACMUTE_` variables when the corresponding `BRUTE_` variables are unset or empty.
 
 Release mode requires clean release inputs, runs strict tests and coverage checks, builds universal output, embeds the source revision, and verifies signing. The DMG pipeline submits for notarization, staples and validates the result, inspects the mounted installer, and performs Gatekeeper assessment before replacing local output artifacts. It does not upload a public download or publish an App Store listing.
 

@@ -3,11 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP_NAME="MacMute"
+APP_NAME="Brute"
 APP_BUNDLE="${APP_NAME}.app"
-RELEASE_BUILD="${MACMUTE_RELEASE:-0}"
-SIGNING_IDENTITY="${MACMUTE_SIGNING_IDENTITY:--}"
-NOTARY_PROFILE="${MACMUTE_NOTARY_PROFILE:-}"
+RELEASE_BUILD="${BRUTE_RELEASE:-${MACMUTE_RELEASE:-0}}"
+SIGNING_IDENTITY="${BRUTE_SIGNING_IDENTITY:-${MACMUTE_SIGNING_IDENTITY:--}}"
+NOTARY_PROFILE="${BRUTE_NOTARY_PROFILE:-${MACMUTE_NOTARY_PROFILE:-}}"
 WORK_DIR=""
 STAGING_DIR=""
 TEMP_DMG=""
@@ -64,8 +64,9 @@ verify_installer_contents() {
     if [[ "${assess_gatekeeper}" == "1" ]]; then
         spctl --assess --type execute --verbose=2 "${MOUNT_DIR}/${APP_BUNDLE}"
     fi
-    lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64 x86_64
-    /usr/libexec/PlistBuddy -c "Print :MacMuteSourceRevision" \
+    lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64
+    lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch x86_64
+    /usr/libexec/PlistBuddy -c "Print :BruteSourceRevision" \
       "${MOUNT_DIR}/${APP_BUNDLE}/Contents/Info.plist" >/dev/null
     hdiutil detach "${MOUNT_DIR}" >/dev/null
     DMG_MOUNTED=0
@@ -74,21 +75,21 @@ verify_installer_contents() {
 }
 
 if [[ "${RELEASE_BUILD}" != "0" && "${RELEASE_BUILD}" != "1" ]]; then
-    echo "error: MACMUTE_RELEASE must be exactly 0 or 1" >&2
+    echo "error: BRUTE_RELEASE must be exactly 0 or 1" >&2
     exit 1
 fi
 
 if [[ "${RELEASE_BUILD}" == "1" && -z "${NOTARY_PROFILE}" ]]; then
-    echo "error: release builds require MACMUTE_NOTARY_PROFILE" >&2
+    echo "error: release builds require BRUTE_NOTARY_PROFILE" >&2
     exit 1
 fi
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/macmute-dmg-build.XXXXXX")"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/brute-dmg-build.XXXXXX")"
 TEMP_APP_BUNDLE="${WORK_DIR}/${APP_BUNDLE}"
 STAGING_DIR="${WORK_DIR}/staging"
 
 echo "==> Building verified temporary ${APP_BUNDLE}"
-MACMUTE_APP_OUTPUT="${TEMP_APP_BUNDLE}" ./Scripts/build_app.sh
+BRUTE_APP_OUTPUT="${TEMP_APP_BUNDLE}" ./Scripts/build_app.sh
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${TEMP_APP_BUNDLE}/Contents/Info.plist")
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"

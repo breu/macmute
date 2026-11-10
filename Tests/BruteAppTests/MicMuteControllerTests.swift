@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 import AVFoundation
 import Foundation
 import XCTest
-@testable import MacMuteApp
+@testable import BruteApp
 
 @MainActor
 final class MicMuteControllerTests: XCTestCase {
@@ -46,7 +46,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testFallbackBaselineSurvivesControllerRestart() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -141,7 +141,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testPersistedMuteOwnershipRestoresDepartingDeviceAfterRelaunch() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -345,7 +345,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testPendingSafetyIntentSurvivesControllerRestartWithStableUID() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -451,7 +451,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testEphemeralDeviceIdentityIsNeverPersisted() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -528,7 +528,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testSessionIdentityUpgradesToUIDWithoutLosingVolumeBaseline() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "later-stable")
@@ -609,7 +609,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testChannelVolumeSnapshotWithSilentChannelSurvivesRestart() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let firstHardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "channels")
@@ -816,7 +816,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testHotkeyHandlerFailureRetriesBeforeReportingActive() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         var handlerAvailable = false
@@ -841,7 +841,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testUnavailableSavedFnShortcutIsPreservedAndRetried() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(
@@ -875,7 +875,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testSwitchingFromFnRetriesPreviouslyUnavailableCarbonHandler() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(
@@ -901,7 +901,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testCarbonPressIsCancelledOnWakeAndNextPressIsAccepted() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let manager = HotkeyManager(
@@ -958,7 +958,7 @@ final class MicMuteControllerTests: XCTestCase {
     func testUserStateChangeExecutionContract() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let sources = root.appendingPathComponent("Sources/MacMuteApp")
+        let sources = root.appendingPathComponent("Sources/BruteApp")
         for file in try FileManager.default.contentsOfDirectory(at: sources, includingPropertiesForKeys: nil)
             where file.pathExtension == "swift" {
             let source = try String(contentsOf: file, encoding: .utf8)
@@ -997,7 +997,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testDelayPersistsAndChangesOnlyFutureGestures() {
-        let defaults = UserDefaults(suiteName: "MacMuteDelayTests.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: "BruteDelayTests.\(UUID().uuidString)")!
         defer { defaults.removeObject(forKey: "MacMute.tapHoldDelay") }
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.muteProperties.insert(1)
@@ -1139,7 +1139,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testPreferencesRefreshesLaunchAtLoginAfterExternalChange() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let hotkey = HotkeyManager(
@@ -1168,7 +1168,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testPreferencesPreservesShortcutDisplayWhenReplacementRegistrationFails() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         var registrationCalls = 0
@@ -1197,7 +1197,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testPreferencesReflectsLaunchAtLoginRequestFailure() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let hotkey = HotkeyManager(
@@ -1368,7 +1368,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testMalformedPersistedVolumeSnapshotIsRejectedAsAWhole() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(["uid:stable-1": ["1": 0.2, "2": true]], forKey: "MacMute.savedInputVolumes")
@@ -1383,7 +1383,7 @@ final class MicMuteControllerTests: XCTestCase {
     }
 
     func testNonBooleanPersistedPendingIntentIsRejected() {
-        let suiteName = "MacMuteTests.\(UUID().uuidString)"
+        let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(["uid:stable-1": 2], forKey: "MacMute.pendingInputStates")

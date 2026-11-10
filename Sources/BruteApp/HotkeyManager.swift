@@ -4,8 +4,8 @@ import Carbon.HIToolbox
 import Foundation
 
 extension Notification.Name {
-    static let macMuteHotkeyRegistrationDidChange = Notification.Name(
-        "MacMute.hotkeyRegistrationDidChange"
+    static let bruteHotkeyRegistrationDidChange = Notification.Name(
+        "Brute.hotkeyRegistrationDidChange"
     )
 }
 
@@ -320,7 +320,7 @@ final class HotkeyManager {
         case .carbon(let reference, _):
             let status = UnregisterEventHotKey(reference)
             if status != noErr {
-                NSLog("MacMute: failed to unregister hotkey (OSStatus %d)", status)
+                NSLog("Brute: failed to unregister hotkey (OSStatus %d)", status)
             }
         case .functionKey(let global, let local):
             NSEvent.removeMonitor(global)
@@ -395,15 +395,15 @@ final class HotkeyManager {
 
     private func recordRegistrationError(_ error: HotkeyRegistrationError) {
         lastRegistrationError = error
-        NSLog("MacMute: %@", error.localizedDescription)
-        NotificationCenter.default.post(name: .macMuteHotkeyRegistrationDidChange, object: nil)
+        NSLog("Brute: %@", error.localizedDescription)
+        NotificationCenter.default.post(name: .bruteHotkeyRegistrationDidChange, object: nil)
     }
 
     private func recordRegistrationSuccess() {
         registrationRetryTimer?.invalidate()
         registrationRetryTimer = nil
         lastRegistrationError = nil
-        NotificationCenter.default.post(name: .macMuteHotkeyRegistrationDidChange, object: nil)
+        NotificationCenter.default.post(name: .bruteHotkeyRegistrationDidChange, object: nil)
     }
 
     private func scheduleRegistrationRetry() {

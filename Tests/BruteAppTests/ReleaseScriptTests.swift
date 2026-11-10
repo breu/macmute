@@ -5,15 +5,15 @@ final class ReleaseScriptTests: XCTestCase {
     func testCoverageGateCountsOnlyProductSourcesAndEnforcesExactFloor() throws {
         let report = """
         {"data":[{"files":[
-          {"filename":"/repo/Sources/MacMuteApp/One.swift","summary":{"lines":{"count":8,"covered":4}}},
-          {"filename":"/repo/Sources/MacMuteApp/MicMuteController.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Sources/MacMuteApp/HotkeyManager.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Sources/MacMuteApp/LaunchAtLoginManager.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Sources/MacMuteApp/MicrophoneActionController.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Sources/MacMuteApp/ClickSoundPlayer.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Sources/MacMuteApp/PreferencesWindow.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Sources/MacMuteApp/StatusBarController.swift","summary":{"lines":{"count":1,"covered":1}}},
-          {"filename":"/repo/Tests/MacMuteAppTests/OneTests.swift","summary":{"lines":{"count":100,"covered":100}}}
+          {"filename":"/repo/Sources/BruteApp/One.swift","summary":{"lines":{"count":8,"covered":4}}},
+          {"filename":"/repo/Sources/BruteApp/MicMuteController.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Sources/BruteApp/HotkeyManager.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Sources/BruteApp/LaunchAtLoginManager.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Sources/BruteApp/MicrophoneActionController.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Sources/BruteApp/ClickSoundPlayer.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Sources/BruteApp/PreferencesWindow.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Sources/BruteApp/StatusBarController.swift","summary":{"lines":{"count":1,"covered":1}}},
+          {"filename":"/repo/Tests/BruteAppTests/OneTests.swift","summary":{"lines":{"count":100,"covered":100}}}
         ]}]}
         """
         let accepted = try runCoverageGate(report: report, minimum: "73.33")
@@ -31,7 +31,7 @@ final class ReleaseScriptTests: XCTestCase {
             minimum: "0"
         )
         XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.output.contains("contains no MacMute source lines"))
+        XCTAssertTrue(result.output.contains("contains no Brute source lines"))
     }
 
     func testCoverageGateEnforcesCriticalFileFloorIndependentlyOfAggregate() throws {
@@ -44,7 +44,7 @@ final class ReleaseScriptTests: XCTestCase {
             "PreferencesWindow.swift": 1,
             "StatusBarController.swift": 1,
         ].map { filename, covered in
-            "{\"filename\":\"/repo/Sources/MacMuteApp/\(filename)\",\"summary\":{\"lines\":{\"count\":1,\"covered\":\(covered)}}}"
+            "{\"filename\":\"/repo/Sources/BruteApp/\(filename)\",\"summary\":{\"lines\":{\"count\":1,\"covered\":\(covered)}}}"
         }.joined(separator: ",")
         let result = try runCoverageGate(
             report: "{\"data\":[{\"files\":[\(entries)]}]}",
@@ -57,18 +57,18 @@ final class ReleaseScriptTests: XCTestCase {
 
     func testCoverageGateRejectsImpossibleLineCounts() throws {
         let result = try runCoverageGate(
-            report: "{\"data\":[{\"files\":[{\"filename\":\"/repo/Sources/MacMuteApp/MicMuteController.swift\",\"summary\":{\"lines\":{\"count\":1,\"covered\":2}}}]}]}",
+            report: "{\"data\":[{\"files\":[{\"filename\":\"/repo/Sources/BruteApp/MicMuteController.swift\",\"summary\":{\"lines\":{\"count\":1,\"covered\":2}}}]}]}",
             minimum: "0"
         )
 
         XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.output.contains("contains no MacMute source lines"))
+        XCTAssertTrue(result.output.contains("contains no Brute source lines"))
     }
 
     func testReleaseModeRejectsNonBooleanValue() throws {
-        let result = try runRepositoryScript("Scripts/build_app.sh", environment: ["MACMUTE_RELEASE": "true"])
+        let result = try runRepositoryScript("Scripts/build_app.sh", environment: ["BRUTE_RELEASE": "true"])
         XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.output.contains("MACMUTE_RELEASE must be exactly 0 or 1"))
+        XCTAssertTrue(result.output.contains("BRUTE_RELEASE must be exactly 0 or 1"))
     }
 
     func testReleaseFailsClosedUntilPinnedTeamIdentifierIsConfigured() throws {
@@ -83,9 +83,11 @@ final class ReleaseScriptTests: XCTestCase {
     }
 
     func testReleaseDMGRequiresNotaryProfileBeforeBuilding() throws {
-        let result = try runRepositoryScript("Scripts/build_dmg.sh", environment: ["MACMUTE_RELEASE": "1"])
-        XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.output.contains("release builds require MACMUTE_NOTARY_PROFILE"))
+        for releaseFlag in ["BRUTE_RELEASE", "MACMUTE_RELEASE"] {
+            let result = try runRepositoryScript("Scripts/build_dmg.sh", environment: [releaseFlag: "1"])
+            XCTAssertNotEqual(result.status, 0, releaseFlag)
+            XCTAssertTrue(result.output.contains("release builds require BRUTE_NOTARY_PROFILE"), releaseFlag)
+        }
     }
 
     func testPinnedTeamIdentifierRejectsEnvironmentOverride() throws {
@@ -93,7 +95,7 @@ final class ReleaseScriptTests: XCTestCase {
         defer { fixture.remove() }
         let result = try fixture.run(
             "Scripts/build_app.sh",
-            extraEnvironment: ["MACMUTE_TEAM_ID": "ZZZZZ99999"]
+            extraEnvironment: ["BRUTE_TEAM_ID": "ZZZZZ99999"]
         )
         XCTAssertNotEqual(result.status, 0)
         XCTAssertTrue(result.output.contains("does not match the repository-pinned"))
@@ -106,7 +108,7 @@ final class ReleaseScriptTests: XCTestCase {
         let result = try fixture.run(
             "Scripts/build_app.sh",
             extraEnvironment: [
-                "MACMUTE_SIGNING_IDENTITY": "Developer ID Application: Other BreuSoftware LLC Name (ABCDE12345)"
+                "BRUTE_SIGNING_IDENTITY": "Developer ID Application: Other BreuSoftware LLC Name (ABCDE12345)"
             ]
         )
         XCTAssertNotEqual(result.status, 0)
@@ -132,13 +134,19 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertEqual(result.status, 0, result.output)
         XCTAssertTrue(fixture.appURL.exists)
         XCTAssertTrue(fixture.dmgURL.exists)
+        XCTAssertEqual(
+            try Data(contentsOf: fixture.appURL.appendingPathComponent("Contents/Resources/BruteHelp.html")),
+            try Data(contentsOf: fixture.root.appendingPathComponent("Resources/BruteHelp.html"))
+        )
         let log = try String(contentsOf: fixture.logURL, encoding: .utf8)
         XCTAssertTrue(log.contains("swift test"))
         XCTAssertTrue(log.contains("--enable-code-coverage"))
         XCTAssertTrue(log.contains("Scripts/check_coverage.swift"))
         XCTAssertTrue(log.contains("swift build"))
-        XCTAssertTrue(log.contains("--arch arm64 --arch x86_64"))
-        XCTAssertGreaterThanOrEqual(log.components(separatedBy: "-verify_arch arm64 x86_64").count - 1, 3)
+        XCTAssertTrue(log.contains("--arch arm64 --arch x86_64 --show-bin-path"))
+        for architecture in ["arm64", "x86_64"] {
+            XCTAssertGreaterThanOrEqual(log.components(separatedBy: "-verify_arch \(architecture)").count - 1, 3)
+        }
         XCTAssertGreaterThanOrEqual(log.components(separatedBy: "hdiutil attach").count - 1, 2)
         XCTAssertTrue(log.contains("xcrun notarytool submit"))
         XCTAssertTrue(log.contains("xcrun stapler staple"))
@@ -149,7 +157,7 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertLessThan(appAssessmentRange.lowerBound, imageAssessmentRange.lowerBound)
         XCTAssertGreaterThanOrEqual(log.components(separatedBy: "hdiutil verify").count - 1, 2)
         let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
-        XCTAssertEqual(plist?["MacMuteSourceRevision"] as? String, ReleaseFixture.sourceRevision)
+        XCTAssertEqual(plist?["BruteSourceRevision"] as? String, ReleaseFixture.sourceRevision)
     }
 
     func testReleaseRejectsUntrackedReleaseInput() throws {
@@ -185,23 +193,27 @@ final class ReleaseScriptTests: XCTestCase {
         let result = try fixture.run(
             "Scripts/build_app.sh",
             extraEnvironment: [
-                "MACMUTE_RELEASE": "0",
+                "BRUTE_RELEASE": "0",
                 "FAKE_GIT_STATUS": "?? Sources/Injected.swift",
             ]
         )
 
         XCTAssertEqual(result.status, 0, result.output)
         let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
-        XCTAssertEqual(plist?["MacMuteSourceRevision"] as? String, "\(ReleaseFixture.sourceRevision)-dirty")
+        XCTAssertEqual(plist?["BruteSourceRevision"] as? String, "\(ReleaseFixture.sourceRevision)-dirty")
     }
 
     func testReleaseFixtureRemovesOuterReleaseRoutingVariables() {
         let environment = ReleaseFixture.sanitizedBaseEnvironment([
-            "MACMUTE_APP_OUTPUT": "/tmp/outer.app",
-            "MACMUTE_TEAM_ID": "OUTER12345",
+            "BRUTE_APP_OUTPUT": "/tmp/outer.app",
+            "BRUTE_TEAM_ID": "OUTER12345",
+            "MACMUTE_APP_OUTPUT": "/tmp/legacy.app",
+            "MACMUTE_TEAM_ID": "LEGACY1234",
             "PATH": "/usr/bin",
         ])
 
+        XCTAssertNil(environment["BRUTE_APP_OUTPUT"])
+        XCTAssertNil(environment["BRUTE_TEAM_ID"])
         XCTAssertNil(environment["MACMUTE_APP_OUTPUT"])
         XCTAssertNil(environment["MACMUTE_TEAM_ID"])
         XCTAssertEqual(environment["PATH"], "/usr/bin")
@@ -275,10 +287,11 @@ final class ReleaseScriptTests: XCTestCase {
     ) throws -> (status: Int32, output: String) {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let baseEnvironment = ReleaseFixture.sanitizedBaseEnvironment(ProcessInfo.processInfo.environment)
         return try Self.run(
             executable: root.appendingPathComponent(relativePath),
             directory: root,
-            environment: ProcessInfo.processInfo.environment.merging(overrides) { _, new in new }
+            environment: baseEnvironment.merging(overrides) { _, new in new }
         )
     }
 
@@ -289,7 +302,7 @@ final class ReleaseScriptTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let reportURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MacMuteCoverage.\(UUID().uuidString).json")
+            .appendingPathComponent("BruteCoverage.\(UUID().uuidString).json")
         try report.write(to: reportURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: reportURL) }
         return try Self.run(
@@ -328,12 +341,12 @@ private final class ReleaseFixture {
     let root: URL
     let binURL: URL
     let logURL: URL
-    var appURL: URL { root.appendingPathComponent("MacMute.app") }
-    var dmgURL: URL { root.appendingPathComponent("MacMute-1.3.dmg") }
+    var appURL: URL { root.appendingPathComponent("Brute.app") }
+    var dmgURL: URL { root.appendingPathComponent("Brute-1.3.dmg") }
 
     init() throws {
         root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MacMuteReleaseTests.\(UUID().uuidString)")
+            .appendingPathComponent("BruteReleaseTests.\(UUID().uuidString)")
         binURL = root.appendingPathComponent("bin")
         logURL = root.appendingPathComponent("tool.log")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Scripts"), withIntermediateDirectories: true)
@@ -348,6 +361,10 @@ private final class ReleaseFixture {
                 to: root.appendingPathComponent("Scripts/\(script)")
             )
         }
+        try FileManager.default.copyItem(
+            at: repositoryRoot.appendingPathComponent("Resources/BruteHelp.html"),
+            to: root.appendingPathComponent("Resources/BruteHelp.html")
+        )
         try Data(Self.teamID.utf8).write(to: root.appendingPathComponent("Resources/BreuSoftwareTeamID.txt"))
         try Data("icon".utf8).write(to: root.appendingPathComponent("Resources/RaptorIcon.png"))
         try Self.infoPlist.write(
@@ -364,9 +381,9 @@ private final class ReleaseFixture {
     ) throws -> (status: Int32, output: String) {
         var environment = Self.sanitizedBaseEnvironment(ProcessInfo.processInfo.environment)
         environment["PATH"] = "\(binURL.path):/usr/bin:/bin:/usr/sbin:/sbin"
-        environment["MACMUTE_RELEASE"] = "1"
-        environment["MACMUTE_SIGNING_IDENTITY"] = "Developer ID Application: BreuSoftware LLC (\(Self.teamID))"
-        environment["MACMUTE_NOTARY_PROFILE"] = "test-profile"
+        environment["BRUTE_RELEASE"] = "1"
+        environment["BRUTE_SIGNING_IDENTITY"] = "Developer ID Application: BreuSoftware LLC (\(Self.teamID))"
+        environment["BRUTE_NOTARY_PROFILE"] = "test-profile"
         environment["FAKE_SIGNED_TEAM_ID"] = Self.teamID
         environment["FAKE_SOURCE_REVISION"] = Self.sourceRevision
         environment["FAKE_TOOL_LOG"] = logURL.path
@@ -384,10 +401,9 @@ private final class ReleaseFixture {
     fileprivate static func sanitizedBaseEnvironment(
         _ environment: [String: String]
     ) -> [String: String] {
-        var environment = environment
-        environment.removeValue(forKey: "MACMUTE_APP_OUTPUT")
-        environment.removeValue(forKey: "MACMUTE_TEAM_ID")
-        return environment
+        environment.filter { key, _ in
+            !key.hasPrefix("BRUTE_") && !key.hasPrefix("MACMUTE_")
+        }
     }
 
     func installPreviousArtifacts() throws {
@@ -421,9 +437,14 @@ private final class ReleaseFixture {
           echo .build/fake-codecov.json
         fi
         if [ "$1" = "build" ]; then
-          mkdir -p .build/apple/Products/Release
-          printf '#!/bin/sh\nexit 0\n' > .build/apple/Products/Release/MacMuteApp
-          chmod +x .build/apple/Products/Release/MacMuteApp
+          case " $* " in
+            *" --show-bin-path "*) printf '%s\n' "$PWD/.build/universal products" ;;
+            *)
+              mkdir -p '.build/universal products'
+              printf '#!/bin/sh\nexit 0\n' > '.build/universal products/BruteApp'
+              chmod +x '.build/universal products/BruteApp'
+              ;;
+          esac
         fi
         [ "$FAKE_FAIL_TOOL" = "coverage" ] && [ "$1" = "Scripts/check_coverage.swift" ] && exit 9
         [ "$FAKE_FAIL_TOOL" = "swift-$1" ] && exit 9
@@ -457,7 +478,7 @@ private final class ReleaseFixture {
         try writeTool("lipo", body: """
         echo "lipo $*" >> "$FAKE_TOOL_LOG"
         [ "$FAKE_FAIL_TOOL" = "lipo" ] && exit 9
-        [ "$2" = "-verify_arch" ] && [ -f "$1" ]
+        [ "$#" -eq 3 ] && [ "$2" = "-verify_arch" ] && [ -f "$1" ]
         """)
         try writeTool("hdiutil", body: """
         echo "hdiutil $*" >> "$FAKE_TOOL_LOG"
@@ -488,7 +509,7 @@ private final class ReleaseFixture {
           last="$1"
           shift
         done
-        [ -d "$srcfolder/MacMute.app" ] || exit 8
+        [ -d "$srcfolder/Brute.app" ] || exit 8
         [ -L "$srcfolder/Applications" ] || exit 8
         mkdir -p "$last.contents"
         cp -R "$srcfolder/." "$last.contents/"
@@ -501,8 +522,8 @@ private final class ReleaseFixture {
         exit 0
         """)
         try writeTool("mv", body: """
-        if [ "$FAKE_FAIL_TOOL" = "publish-dmg" ] && [ "$2" = "MacMute-1.3.dmg" ]; then
-          case "$1" in *macmute-dmg-build.*/MacMute-1.3.dmg) exit 9 ;; esac
+        if [ "$FAKE_FAIL_TOOL" = "publish-dmg" ] && [ "$2" = "Brute-1.3.dmg" ]; then
+          case "$1" in *brute-dmg-build.*/Brute-1.3.dmg) exit 9 ;; esac
         fi
         exec /bin/mv "$@"
         """)
@@ -519,7 +540,7 @@ private final class ReleaseFixture {
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
     <plist version="1.0"><dict>
     <key>CFBundleShortVersionString</key><string>1.3</string>
-    <key>CFBundleExecutable</key><string>MacMute</string>
+    <key>CFBundleExecutable</key><string>Brute</string>
     <key>CFBundleIdentifier</key><string>com.breu.macmute</string>
     </dict></plist>
     """

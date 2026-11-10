@@ -202,7 +202,7 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
             block
         )
         guard status == noErr else {
-            NSLog("MacMute: failed to observe default input device changes (OSStatus %d)", status)
+            NSLog("Brute: failed to observe default input device changes (OSStatus %d)", status)
             return false
         }
         defaultDeviceListenerBlock = block
@@ -247,7 +247,7 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
                 stateListenerAddresses.append(originalAddress)
             } else {
                 allRegistered = false
-                NSLog("MacMute: failed to observe microphone state changes (OSStatus %d)", status)
+                NSLog("Brute: failed to observe microphone state changes (OSStatus %d)", status)
             }
         }
         guard !stateListenerAddresses.isEmpty else { return false }
@@ -264,7 +264,7 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
             var address = originalAddress
             let status = AudioObjectRemovePropertyListenerBlock(deviceID, &address, DispatchQueue.main, block)
             if status != noErr {
-                NSLog("MacMute: failed to remove microphone state observer (OSStatus %d)", status)
+                NSLog("Brute: failed to remove microphone state observer (OSStatus %d)", status)
             }
         }
         stateListenerDeviceID = nil
@@ -500,7 +500,7 @@ final class MicMuteController {
             self?.refreshState()
         }
         if !observesDefaultDevice || !observesState {
-            NSLog("MacMute: CoreAudio observation is incomplete; periodic verification remains active")
+            NSLog("Brute: CoreAudio observation is incomplete; periodic verification remains active")
         }
         startStatePolling()
         observeWake()
@@ -585,7 +585,7 @@ final class MicMuteController {
                let identity = validatedIdentity(for: oldDeviceID, mustRemainDefault: false),
                ownsMute(identity),
                !restoreAppOwnedMute(identity) {
-                NSLog("MacMute: could not restore departing input device; restoration remains queued")
+                NSLog("Brute: could not restore departing input device; restoration remains queued")
             } else if oldIdentity?.matches == false,
                       let key = oldIdentity?.key,
                       knownDeviceIDs[key] == oldDeviceID {
