@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import Foundation
 import XCTest
@@ -117,6 +118,34 @@ final class PreferencesTests: XCTestCase {
         XCTAssertNotNil(model.hotkeyErrorMessage)
         XCTAssertEqual(hotkey.currentShortcut, .default)
         XCTAssertTrue(hotkey.hasActiveRegistration)
+    }
+
+    func testClosingPreferencesCancelsRecordingOnTheRetainedWindow() throws {
+        _ = NSApplication.shared
+        let suiteName = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let hotkey = HotkeyManager(
+            defaults: defaults,
+            observesWake: false,
+            installHandlerOverride: { .success(()) },
+            registrationOverride: { _ in .success(()) }
+        )
+        let preferences = PreferencesWindowController(
+            hotkeyManager: hotkey,
+            launchManager: LaunchAtLoginManager(service: FakeLaunchService(status: .notRegistered)),
+            iconPreferences: IconPreferences(defaults: defaults)
+        )
+        let window = try XCTUnwrap(preferences.window)
+        let recorder = preferences.recorder
+        defer { recorder.cancel() }
+        recorder.record { _ in XCTFail("Closing Preferences must not apply a shortcut") }
+        XCTAssertTrue(recorder.isRecording)
+
+        window.close()
+
+        XCTAssertFalse(recorder.isRecording)
+        XCTAssertTrue(preferences.window === window, "Preferences retains the window for reuse")
     }
 
     func testPreferencesReflectsLaunchAtLoginRequestFailure() {

@@ -40,58 +40,53 @@ final class ClickSoundPlayerTests: XCTestCase {
         XCTAssertEqual(engine.playCount, 0, "Never schedule buffers onto an engine that is not running")
     }
 
-    func testRebuildGraphAsksEngineToRebuildRatherThanRestart() {
+    func testOutputConfigurationChangeRebuildsGraphAfterDelay() {
         let engine = FakeClickEngine()
-        let player = ClickSoundPlayer(engine: engine, observesLifecycle: false)
+        let player = ClickSoundPlayer(engine: engine, observesLifecycle: false, rebuildDelay: 0.01)
+        let rebuilt = expectation(description: "fresh graph after the output change")
+        engine.onRebuild = { rebuilt.fulfill() }
 
-        player.rebuildGraph()
+        engine.fireConfigurationChange()
 
-        XCTAssertEqual(engine.rebuildCount, 1)
-    }
-
-    func testConfigurationChangeRestartsEngineWithoutRebuildingIt() {
-        let engine = FakeClickEngine()
-        let player = ClickSoundPlayer(engine: engine, observesLifecycle: false)
-
-        withExtendedLifetime(player) {
-            engine.fireConfigurationChange()
-        }
-
-        XCTAssertEqual(engine.startCount, 1)
+        XCTAssertTrue(player.isRebuildScheduled)
         XCTAssertEqual(engine.rebuildCount, 0)
+        XCTAssertEqual(engine.startCount, 0)
+        waitForExpectations(timeout: 2)
+        XCTAssertEqual(engine.rebuildCount, 1)
+        XCTAssertFalse(player.isRebuildScheduled)
     }
 
-    func testWakeSchedulesExactlyOneDelayedRebuild() {
+    func testWakeAndOutputChangeShareOnePendingRebuild() {
         let engine = FakeClickEngine()
         let player = ClickSoundPlayer(
             engine: engine,
             observesLifecycle: false,
-            wakeRebuildDelay: 0.01
+            rebuildDelay: 0.01
         )
-
-        player.scheduleWakeRebuild()
-        XCTAssertTrue(player.isWakeRebuildScheduled)
-        player.scheduleWakeRebuild()
-        XCTAssertTrue(player.isWakeRebuildScheduled, "A second wake must not stack rebuilds")
 
         let rebuilt = expectation(description: "engine rebuilt after the wake delay")
         engine.onRebuild = { rebuilt.fulfill() }
+
+        player.scheduleRebuild()
+        engine.fireConfigurationChange()
+
+        XCTAssertTrue(player.isRebuildScheduled)
         waitForExpectations(timeout: 2)
         XCTAssertEqual(engine.rebuildCount, 1)
-        XCTAssertFalse(player.isWakeRebuildScheduled)
+        XCTAssertFalse(player.isRebuildScheduled)
     }
 
-    func testShutdownCancelsPendingWakeRebuildAndStopsFeedback() {
+    func testShutdownCancelsPendingRebuildAndStopsFeedback() {
         let engine = FakeClickEngine()
-        let player = ClickSoundPlayer(engine: engine, observesLifecycle: false, wakeRebuildDelay: 0.01)
-        player.scheduleWakeRebuild()
-        XCTAssertTrue(player.isWakeRebuildScheduled)
+        let player = ClickSoundPlayer(engine: engine, observesLifecycle: false, rebuildDelay: 0.01)
+        engine.fireConfigurationChange()
+        XCTAssertTrue(player.isRebuildScheduled)
 
         player.shutdown()
         engine.fireConfigurationChange()
         player.play()
 
-        XCTAssertFalse(player.isWakeRebuildScheduled)
+        XCTAssertFalse(player.isRebuildScheduled)
         XCTAssertEqual(engine.stopCount, 1)
         XCTAssertEqual(engine.startCount, 0)
         XCTAssertEqual(engine.playCount, 0)

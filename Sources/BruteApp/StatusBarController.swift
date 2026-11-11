@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// The menu bar item and its live status menu.
 @MainActor
@@ -8,6 +9,19 @@ final class StatusBarController {
         let symbol: String
         let accessibilityDescription: String
         let menuTitle: String
+        let tint: NSColor?
+
+        func icon(useColoredIcon: Bool) -> NSImage? {
+            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibilityDescription)
+            else { return nil }
+            if useColoredIcon, let tint,
+               let coloredImage = image.withSymbolConfiguration(.init(paletteColors: [tint])) {
+                coloredImage.isTemplate = false
+                return coloredImage
+            }
+            image.isTemplate = true
+            return image
+        }
     }
 
     let menu = NSMenu()
@@ -16,8 +30,10 @@ final class StatusBarController {
     private let hotkeyManager: HotkeyManager
     private let actionController: MicrophoneActionController
     private let launchManager: LaunchAtLoginManaging
+    private let iconPreferences: IconPreferences
     private var preferencesWindowController: PreferencesWindowController?
     private var hotkeyObserver: NotificationObservation?
+    private var iconObservation: AnyCancellable?
     private var microphoneStateLabel: NSTextField?
     private var hotkeyStateLabel: NSTextField?
     private var delayLabel: NSTextField?
@@ -28,16 +44,23 @@ final class StatusBarController {
         muteController: MicMuteController,
         hotkeyManager: HotkeyManager,
         actionController: MicrophoneActionController,
-        launchManager: LaunchAtLoginManaging
+        launchManager: LaunchAtLoginManaging,
+        iconPreferences: IconPreferences
     ) {
         self.statusItem = statusItem
         self.muteController = muteController
         self.hotkeyManager = hotkeyManager
         self.actionController = actionController
         self.launchManager = launchManager
+        self.iconPreferences = iconPreferences
         configureMenu()
         muteController.onStateChanged = { [weak self] state in
-            self?.updateMicrophoneState(state)
+            guard let self else { return }
+            self.updateMicrophoneState(state, useColoredIcon: self.iconPreferences.useColoredIcon)
+        }
+        iconObservation = iconPreferences.$useColoredIcon.dropFirst().sink { [weak self] enabled in
+            guard let self else { return }
+            self.updateMicrophoneState(self.muteController.state, useColoredIcon: enabled)
         }
         hotkeyObserver = NotificationObservation(
             center: .default,
@@ -50,13 +73,14 @@ final class StatusBarController {
                 self.updateHotkeyState()
             }
         }
-        updateMicrophoneState(muteController.state)
+        updateMicrophoneState(muteController.state, useColoredIcon: iconPreferences.useColoredIcon)
         updateHotkeyState()
     }
 
     func shutdown() {
         guard hotkeyObserver != nil else { return }
         hotkeyObserver = nil
+        iconObservation = nil
         muteController.onStateChanged = nil
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
@@ -197,7 +221,8 @@ final class StatusBarController {
         if preferencesWindowController == nil {
             preferencesWindowController = PreferencesWindowController(
                 hotkeyManager: hotkeyManager,
-                launchManager: launchManager
+                launchManager: launchManager,
+                iconPreferences: iconPreferences
             )
         }
         preferencesWindowController?.show()
@@ -230,12 +255,9 @@ final class StatusBarController {
         NSApp.terminate(nil)
     }
 
-    private func updateMicrophoneState(_ state: MicrophoneState) {
+    private func updateMicrophoneState(_ state: MicrophoneState, useColoredIcon: Bool) {
         let presentation = Self.presentation(for: state, error: muteController.lastError)
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: presentation.symbol,
-            accessibilityDescription: presentation.accessibilityDescription
-        )
+        statusItem?.button?.image = presentation.icon(useColoredIcon: useColoredIcon)
         statusItem?.button?.setAccessibilityLabel(presentation.accessibilityDescription)
         statusItem?.button?.toolTip = presentation.menuTitle
         updateInformation(microphoneStateLabel, title: presentation.menuTitle)
@@ -251,19 +273,22 @@ final class StatusBarController {
             return MicrophonePresentation(
                 symbol: "mic.slash.fill",
                 accessibilityDescription: BruteStrings.microphoneMutedAccessibilityLabel,
-                menuTitle: BruteStrings.microphoneState(BruteStrings.microphoneMuted, detail: reason)
+                menuTitle: BruteStrings.microphoneState(BruteStrings.microphoneMuted, detail: reason),
+                tint: .systemRed
             )
         case .unmuted:
             return MicrophonePresentation(
                 symbol: "mic.fill",
                 accessibilityDescription: BruteStrings.microphoneUnmutedAccessibilityLabel,
-                menuTitle: BruteStrings.microphoneState(BruteStrings.microphoneUnmuted, detail: reason)
+                menuTitle: BruteStrings.microphoneState(BruteStrings.microphoneUnmuted, detail: reason),
+                tint: .systemGreen
             )
         case .unavailable:
             return MicrophonePresentation(
                 symbol: "exclamationmark.triangle.fill",
                 accessibilityDescription: BruteStrings.microphoneUnavailableAccessibilityLabel,
-                menuTitle: BruteStrings.microphoneState(reason ?? BruteStrings.microphoneUnavailable)
+                menuTitle: BruteStrings.microphoneState(reason ?? BruteStrings.microphoneUnavailable),
+                tint: nil
             )
         }
     }

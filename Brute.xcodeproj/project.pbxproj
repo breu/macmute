@@ -12,6 +12,7 @@
 		54C0D2410748EE4E54C3F0CD /* Sources/BruteApp/AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */; };
 		5A4EC18E4951F47942EBD308 /* Sources/BruteApp/ClickSoundPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */; };
 		63AB3ED8DD3C16412B50765E /* Sources/BruteApp/HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */; };
+		C041931BF6DAA5E7839C658C /* Sources/BruteApp/IconPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */; };
 		67283661A259879923BCB7CD /* Sources/BruteApp/MicrophoneActionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 973BD5A2305BDA82AA192E4A /* Sources/BruteApp/MicrophoneActionController.swift */; };
 		41BA9AF7B12157599DFF37F1 /* Sources/BruteApp/BruteDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F71F458CA4523E8BF0F519 /* Sources/BruteApp/BruteDefaults.swift */; };
 		9C28508BE545574DB4E59BB4 /* Sources/BruteApp/BruteLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10160940D4FB57B1B6544EA1 /* Sources/BruteApp/BruteLog.swift */; };
@@ -67,6 +68,7 @@
 		ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/StatusBarController.swift; sourceTree = SOURCE_ROOT; };
 		D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/ClickSoundPlayer.swift; sourceTree = SOURCE_ROOT; };
 		EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/HotkeyManager.swift; sourceTree = SOURCE_ROOT; };
+		2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/IconPreferences.swift; sourceTree = SOURCE_ROOT; };
 		F219C0274590DA45E4BEF1EA /* BruteAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = BruteAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Resources/RaptorIcon.png; sourceTree = SOURCE_ROOT; };
 		FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicMuteController.swift; sourceTree = SOURCE_ROOT; };
@@ -134,6 +136,7 @@
 				9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */,
 				D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */,
 				EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */,
+				2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */,
 				711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */,
 				AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */,
 				FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */,
@@ -292,6 +295,7 @@
 				54C0D2410748EE4E54C3F0CD /* Sources/BruteApp/AppDelegate.swift in Sources */,
 				5A4EC18E4951F47942EBD308 /* Sources/BruteApp/ClickSoundPlayer.swift in Sources */,
 				63AB3ED8DD3C16412B50765E /* Sources/BruteApp/HotkeyManager.swift in Sources */,
+				C041931BF6DAA5E7839C658C /* Sources/BruteApp/IconPreferences.swift in Sources */,
 				FF00A107DDE7181CA7E31724 /* Sources/BruteApp/LaunchAtLoginManager.swift in Sources */,
 				AFAB677187F67732C8CC4A38 /* Sources/BruteApp/BruteApplication.swift in Sources */,
 				0978A5A4F85C7361893A41E5 /* Sources/BruteApp/MicMuteController.swift in Sources */,

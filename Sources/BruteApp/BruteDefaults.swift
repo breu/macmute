@@ -4,12 +4,13 @@ import Foundation
 ///
 /// ## The `MacMute.` prefix is load-bearing — do not "modernize" it
 ///
-/// Three of these keys hold safety state:
+/// These keys hold safety state:
 ///
 /// - `savedInputVolumes` — the per-device input-volume baseline Brute restores
 ///   after muting a device that has no native mute control.
 /// - `appMutedInputDevices` — the record that Brute, not the user, muted a device.
 /// - `pendingInputStates` — device changes and restores still awaiting confirmation.
+/// - `pendingInputVolumeRestorations` — the gain targets for active fallback restores.
 ///
 /// If Brute is killed or crashes while it owns a mute, the next launch reads these
 /// keys to recover ownership and finish pending restores. Deleting or renaming them orphans that record, and
@@ -25,6 +26,8 @@ enum BruteDefaults {
     static let savedInputVolumes = "MacMute.savedInputVolumes"
     static let appMutedInputDevices = "MacMute.appMutedInputDevices"
     static let pendingInputStates = "MacMute.pendingInputStates"
+    static let pendingInputVolumeRestorations = "MacMute.pendingInputVolumeRestorations"
     static let shortcut = "MacMute.shortcut"
     static let tapHoldDelay = "MacMute.tapHoldDelay"
+    static let useColoredIcon = "MacMute.useColoredIcon"
 }

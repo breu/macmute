@@ -3,22 +3,24 @@ import Carbon.HIToolbox
 import SwiftUI
 
 @MainActor
-final class PreferencesWindowController: NSWindowController {
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
+    private let model: PreferencesModel
+    let recorder = ShortcutRecorder()
 
     init(
         hotkeyManager: HotkeyManager,
-        launchManager: LaunchAtLoginManaging
+        launchManager: LaunchAtLoginManaging,
+        iconPreferences: IconPreferences
     ) {
-        let view = PreferencesView(model: PreferencesModel(
-            launchManager: launchManager,
-            hotkeyManager: hotkeyManager
-        ))
+        model = PreferencesModel(launchManager: launchManager, hotkeyManager: hotkeyManager)
+        let view = PreferencesView(model: model, iconPreferences: iconPreferences, recorder: recorder)
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
         window.title = BruteStrings.preferencesWindowTitle
         window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 360, height: 240))
+        window.setContentSize(NSSize(width: 360, height: 276))
         super.init(window: window)
+        window.delegate = self
     }
 
     required init?(coder: NSCoder) {
@@ -26,18 +28,22 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     func show() {
+        model.refreshExternalState()
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        recorder.cancel()
     }
 }
 
 @MainActor
 private struct PreferencesView: View {
     @ObservedObject var model: PreferencesModel
-    @State private var isRecording = false
-
-    @State private var recorder = ShortcutRecorder()
+    @ObservedObject var iconPreferences: IconPreferences
+    @ObservedObject var recorder: ShortcutRecorder
 
     private let icon: NSImage? = PreferencesView.loadIcon()
 
@@ -63,8 +69,9 @@ private struct PreferencesView: View {
             HStack {
                 Text(BruteStrings.hotkeyShortcutLabel)
                 Spacer()
-                Button(isRecording ? BruteStrings.recordingShortcut : model.shortcutDisplay) {
-                    startRecording()
+                Button(recorder.isRecording ? BruteStrings.recordingShortcut : model.shortcutDisplay) {
+                    model.hotkeyErrorMessage = nil
+                    recorder.record(completion: model.updateShortcut)
                 }
                 .frame(minWidth: 100)
             }
@@ -74,6 +81,14 @@ private struct PreferencesView: View {
                 isOn: Binding(
                     get: { model.launchAtLoginEnabled },
                     set: { model.updateLaunchAtLogin($0) }
+                )
+            )
+
+            Toggle(
+                BruteStrings.useColoredIconLabel,
+                isOn: Binding(
+                    get: { iconPreferences.useColoredIcon },
+                    set: { iconPreferences.setUseColoredIcon($0) }
                 )
             )
 
@@ -94,33 +109,11 @@ private struct PreferencesView: View {
             Spacer()
         }
         .padding(20)
-        .frame(width: 360, height: 240)
-        .onDisappear {
-            recorder.cancel()
-            isRecording = false
-        }
-        .onAppear {
-            model.refreshExternalState()
-        }
+        .frame(width: 360, height: 276)
         .onReceive(model.hotkeyRegistrationChanges) { _ in
             model.refreshHotkeyState()
         }
     }
-
-    private func startRecording() {
-        isRecording = true
-        model.hotkeyErrorMessage = nil
-        recorder.record(
-            completion: { shortcut in
-                model.updateShortcut(shortcut)
-                isRecording = false
-            },
-            onCancel: {
-                isRecording = false
-            }
-        )
-    }
-
 }
 
 @MainActor
@@ -185,22 +178,19 @@ final class PreferencesModel: ObservableObject {
 /// Captures the next keyDown + modifier combination (or a standalone fn press)
 /// within the app and converts it into a `KeyboardShortcut`.
 @MainActor
-final class ShortcutRecorder {
+final class ShortcutRecorder: ObservableObject {
+    @Published private(set) var isRecording = false
+
     private var keyMonitor: Any?
     private var flagsMonitor: Any?
     private var fnKeyIsDown = false
 
-    func record(
-        completion: @escaping (KeyboardShortcut) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
+    func record(completion: @escaping (KeyboardShortcut) -> Void) {
         cancel()
-        fnKeyIsDown = false
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             if event.keyCode == UInt16(kVK_Escape) {
                 self?.cancel()
-                onCancel()
                 return nil
             }
             var carbonModifiers: UInt32 = 0
@@ -228,6 +218,12 @@ final class ShortcutRecorder {
             self.fnKeyIsDown = isFnDown
             return event
         }
+
+        guard keyMonitor != nil, flagsMonitor != nil else {
+            cancel()
+            return
+        }
+        isRecording = true
     }
 
     func cancel() {
@@ -236,6 +232,7 @@ final class ShortcutRecorder {
         keyMonitor = nil
         flagsMonitor = nil
         fnKeyIsDown = false
+        if isRecording { isRecording = false }
     }
 
     private func finish(with shortcut: KeyboardShortcut, completion: @escaping (KeyboardShortcut) -> Void) {

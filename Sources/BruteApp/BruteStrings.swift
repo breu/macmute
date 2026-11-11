@@ -53,4 +53,5 @@ enum BruteStrings {
     static let recordingShortcut = "Press keys…"
     static let hotkeyShortcutLabel = "Hotkey Shortcut:"
     static let launchAtLoginLabel = "Launch at Login"
+    static let useColoredIconLabel = "Use Colored Icon"
 }

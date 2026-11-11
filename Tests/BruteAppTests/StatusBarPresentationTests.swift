@@ -38,6 +38,43 @@ final class StatusBarPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.menuTitle.contains(MicControlError.writeFailed.localizedDescription))
     }
 
+    func testStatusIconUsesMutedAndUnmutedColors() {
+        XCTAssertEqual(StatusBarController.presentation(for: .muted).tint, .systemRed)
+        XCTAssertEqual(StatusBarController.presentation(for: .unmuted).tint, .systemGreen)
+    }
+
+    func testIconPreferenceUpdatesStatusButtonAndSurvivesRelaunch() throws {
+        _ = NSApplication.shared
+        let suiteName = "BruteIconTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let iconPreferences = IconPreferences(defaults: defaults)
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumes[1] = 0.5
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.isVisible = false
+        let (statusBar, _) = makeStatusBar(hardware: hardware, statusItem: item, iconPreferences: iconPreferences)
+        defer { statusBar.shutdown() }
+        let button = try XCTUnwrap(item.button)
+
+        XCTAssertTrue(iconPreferences.useColoredIcon)
+        XCTAssertEqual(button.image?.isTemplate, false)
+
+        iconPreferences.setUseColoredIcon(false)
+
+        XCTAssertEqual(button.image?.isTemplate, true)
+        XCTAssertEqual(defaults.object(forKey: "MacMute.useColoredIcon") as? Bool, false)
+        XCTAssertFalse(IconPreferences(defaults: defaults).useColoredIcon)
+
+        iconPreferences.setUseColoredIcon(true)
+        XCTAssertEqual(button.image?.isTemplate, false)
+
+        hardware.defaultDeviceID = nil
+        hardware.triggerDefaultDeviceChange()
+        XCTAssertEqual(button.image?.isTemplate, true, "Unavailable input should keep the warning symbol monochrome")
+        XCTAssertEqual(button.accessibilityLabel(), "Microphone state unavailable")
+    }
+
     func testMenuStateRowUpdatesWhenAnInputDeviceConnects() throws {
         let hardware = FakeAudioDeviceController(defaultDeviceID: nil)
         let (statusBar, _) = makeStatusBar(hardware: hardware)
@@ -78,7 +115,9 @@ final class StatusBarPresentationTests: XCTestCase {
     }
 
     private func makeStatusBar(
-        hardware: FakeAudioDeviceController
+        hardware: FakeAudioDeviceController,
+        statusItem: NSStatusItem? = nil,
+        iconPreferences: IconPreferences? = nil
     ) -> (StatusBarController, MicrophoneActionController) {
         _ = NSApplication.shared
         let defaults = UserDefaults(suiteName: "BruteStatusBarTests.\(UUID().uuidString)")!
@@ -91,11 +130,12 @@ final class StatusBarPresentationTests: XCTestCase {
         )
         let actions = MicrophoneActionController(micController: mic, feedback: nil, observesWake: false)
         let statusBar = StatusBarController(
-            statusItem: nil,
+            statusItem: statusItem,
             muteController: mic,
             hotkeyManager: hotkey,
             actionController: actions,
-            launchManager: LaunchAtLoginManager()
+            launchManager: LaunchAtLoginManager(),
+            iconPreferences: iconPreferences ?? IconPreferences(defaults: defaults)
         )
         return (statusBar, actions)
     }

@@ -13,7 +13,7 @@ protocol ClickSoundEngineing: AnyObject {
     var configurationChangeHandler: (@MainActor () -> Void)? { get set }
     func start()
     func stop()
-    /// Recreates the audio graph after wake.
+    /// Recreates the audio graph after wake or an output change.
     func rebuild()
     func play(_ buffer: AVAudioPCMBuffer)
 }
@@ -26,10 +26,8 @@ protocol FeedbackPlaying: AnyObject {
 
 /// AVAudioEngine-backed click output.
 ///
-/// Recreating the engine and player from scratch — rather than reusing and
-/// restarting the existing objects — is what actually recovers audio after
-/// sleep: a plain stop()/start() on the same instance kept leaving `isRunning`
-/// reporting true with no audio actually reaching the hardware.
+/// Recreate the engine and player after wake or an output change. A restart
+/// can leave `isRunning` true while no audio reaches the hardware.
 @MainActor
 final class AVAudioClickEngine: ClickSoundEngineing {
     var configurationChangeHandler: (@MainActor () -> Void)?
@@ -80,10 +78,8 @@ final class AVAudioClickEngine: ClickSoundEngineing {
         observeConfigurationChange()
     }
 
-    /// Apple posts this specifically when the engine's hardware configuration changes
-    /// (sample rate, device, channel count) — the engine stops itself but does not
-    /// restart automatically. This is the documented signal for the exact class of
-    /// bug where sleep/wake silently kills audio output.
+    /// The engine stops when its hardware configuration changes, including when
+    /// macOS switches the default output device.
     private func observeConfigurationChange() {
         let generation = graphGeneration
         configurationChangeObserver = NotificationObservation(
@@ -100,13 +96,8 @@ final class AVAudioClickEngine: ClickSoundEngineing {
     }
 }
 
-/// Delay before rebuilding after wake. CoreAudio needs a moment to finish its own
-/// hardware reinitialization — rebuilding immediately at the notification can race
-/// with that and still end up silently non-functional.
-///
-/// File-level so it can serve as an initializer default argument, which is a
-/// nonisolated context.
-private let clickWakeRebuildDelay: TimeInterval = 0.5
+/// Let CoreAudio finish reconfiguring the output before building a fresh graph.
+private let clickRebuildDelay: TimeInterval = 0.5
 
 /// Plays a short synthesized "click" as feedback for hotkey-driven mic actions.
 /// Generated in-process rather than bundled as an audio asset, so there's nothing
@@ -118,34 +109,32 @@ final class ClickSoundPlayer: FeedbackPlaying {
 
     private let engine: ClickSoundEngineing
     private let clickBuffer: AVAudioPCMBuffer
-    private let wakeRebuildDelay: TimeInterval
+    private let rebuildDelay: TimeInterval
     private var wakeObserver: NotificationObservation?
-    private var wakeRebuild: Task<Void, Never>?
+    private var pendingRebuild: Task<Void, Never>?
     private var isShutdown = false
 
     init(
         engine: ClickSoundEngineing? = nil,
         observesLifecycle: Bool = true,
-        wakeRebuildDelay: TimeInterval = clickWakeRebuildDelay
+        rebuildDelay: TimeInterval = clickRebuildDelay
     ) {
         let resolvedEngine = engine ?? AVAudioClickEngine()
         self.engine = resolvedEngine
-        self.wakeRebuildDelay = wakeRebuildDelay
+        self.rebuildDelay = rebuildDelay
         clickBuffer = Self.makeClickBuffer(
             format: AVAudioFormat(standardFormatWithSampleRate: clickSampleRate, channels: 1)!,
             sampleRate: clickSampleRate
         )
         resolvedEngine.configurationChangeHandler = { [weak self] in
-            self?.handleConfigurationChange()
+            self?.scheduleRebuild()
         }
         if observesLifecycle {
             observeWake()
         }
     }
 
-    /// Test seam: lets a test observe that a wake-triggered rebuild was scheduled
-    /// without waiting out the real delay.
-    var isWakeRebuildScheduled: Bool { wakeRebuild != nil }
+    var isRebuildScheduled: Bool { pendingRebuild != nil }
 
     /// Feedback for the hotkey muting/unmuting the mic.
     func play() {
@@ -157,22 +146,12 @@ final class ClickSoundPlayer: FeedbackPlaying {
         engine.play(clickBuffer)
     }
 
-    /// Recreates the audio graph after sleep,
-    /// when the previous graph may report `isRunning` while reaching no hardware.
-    func rebuildGraph() {
-        engine.rebuild()
-    }
-
-    func handleConfigurationChange() {
-        engine.start()
-    }
-
     func shutdown() {
         guard !isShutdown else { return }
         isShutdown = true
         wakeObserver = nil
-        wakeRebuild?.cancel()
-        wakeRebuild = nil
+        pendingRebuild?.cancel()
+        pendingRebuild = nil
         engine.configurationChangeHandler = nil
         engine.stop()
     }
@@ -184,22 +163,22 @@ final class ClickSoundPlayer: FeedbackPlaying {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.scheduleWakeRebuild()
+                self?.scheduleRebuild()
             }
         }
     }
 
-    func scheduleWakeRebuild() {
-        guard !isShutdown, wakeRebuild == nil else { return }
-        wakeRebuild = Task { @MainActor [weak self, wakeRebuildDelay] in
+    func scheduleRebuild() {
+        guard !isShutdown, pendingRebuild == nil else { return }
+        pendingRebuild = Task { @MainActor [weak self, rebuildDelay] in
             do {
-                try await Task.sleep(for: .seconds(wakeRebuildDelay))
+                try await Task.sleep(for: .seconds(rebuildDelay))
             } catch {
                 return
             }
             guard let self, !self.isShutdown else { return }
-            self.wakeRebuild = nil
-            self.rebuildGraph()
+            self.pendingRebuild = nil
+            self.engine.rebuild()
         }
     }
 

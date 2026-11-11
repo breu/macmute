@@ -709,6 +709,151 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(hardware.volumes[1] ?? -1, 0.42, accuracy: 0.0001)
     }
 
+    func testPartialFallbackRestoreStaysPendingUntilEachChannelMatches() throws {
+        let suite = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
+        let baseline: InputVolumeSnapshot = [1: 0.30, 2: 0.60]
+        hardware.volumeSnapshots[1] = baseline
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
+        XCTAssertTrue(controller.setMuted(true))
+        hardware.deferVolumeWrites = true
+        XCTAssertTrue(controller.setMuted(false))
+        XCTAssertEqual(hardware.deferredVolumeWrites[1], baseline)
+
+        // The driver accepted both writes but applied only the first channel.
+        hardware.deferredVolumeWrites[1] = [1: 0.30, 2: 0]
+        hardware.completeDeferredWrites()
+        controller.refreshState()
+        XCTAssertEqual(controller.state, .unmuted)
+        XCTAssertTrue(controller.hasOutstandingWork)
+        XCTAssertEqual(hardware.deferredVolumeWrites[1], baseline)
+        XCTAssertEqual(defaults.stringArray(forKey: BruteDefaults.appMutedInputDevices), ["uid:stable-1"])
+
+        // The driver can quantize the restored gain by a small amount.
+        hardware.deferredVolumeWrites[1] = [1: 0.304, 2: 0.597]
+        hardware.completeDeferredWrites()
+        hardware.setVolumeCalls.removeAll()
+        controller.refreshState()
+        XCTAssertFalse(controller.hasOutstandingWork)
+        XCTAssertEqual(hardware.setVolumeCalls, [])
+        XCTAssertEqual(defaults.stringArray(forKey: BruteDefaults.appMutedInputDevices), [])
+    }
+
+    func testPartialFallbackRestoreResumesAfterRestart() throws {
+        let suite = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
+        let baseline: InputVolumeSnapshot = [1: 0.30, 2: 0.60]
+        hardware.volumeSnapshots[1] = baseline
+        var controller: MicMuteController? = MicMuteController(
+            hardware: hardware, observeSystemChanges: false, defaults: defaults
+        )
+        XCTAssertTrue(controller?.setMuted(true) == true)
+        hardware.deferVolumeWrites = true
+        XCTAssertTrue(controller?.setMuted(false) == true)
+        hardware.deferredVolumeWrites[1] = [1: 0.30, 2: 0]
+        hardware.completeDeferredWrites()
+        controller = nil
+
+        hardware.deferVolumeWrites = false
+        let restarted = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
+        XCTAssertEqual(hardware.volumeSnapshots[1], baseline)
+        XCTAssertEqual(restarted.state, .unmuted)
+        XCTAssertFalse(restarted.hasOutstandingWork)
+    }
+
+    func testPartialFallbackRestoreContinuesAfterDeviceSwitchWithNativeMute() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        let baseline: InputVolumeSnapshot = [1: 0.30, 2: 0.60]
+        hardware.volumeSnapshots[1] = baseline
+        hardware.volumes[2] = 0.80
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+        hardware.muteProperties.insert(1)
+        hardware.mutes[1] = true
+        hardware.deferVolumeWrites = true
+        XCTAssertTrue(controller.setMuted(false))
+        XCTAssertEqual(hardware.mutes[1], false)
+        hardware.deferredVolumeWrites[1] = [1: 0.30, 2: 0]
+        hardware.completeDeferredWrites()
+
+        hardware.defaultDeviceID = 2
+        controller.handleDefaultDeviceChange()
+        XCTAssertEqual(hardware.deferredVolumeWrites[1], baseline)
+        XCTAssertTrue(controller.hasOutstandingWork)
+        XCTAssertEqual(hardware.volumes[2], 0.80)
+
+        hardware.completeDeferredWrites()
+        controller.refreshState()
+        XCTAssertEqual(hardware.volumeSnapshots[1], baseline)
+        XCTAssertFalse(controller.hasOutstandingWork)
+    }
+
+    func testSupersedingPartialRestorePreservesBaselineAndRequiresAcceptedMute() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        let baseline: InputVolumeSnapshot = [1: 0.30, 2: 0.60]
+        hardware.volumeSnapshots[1] = baseline
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+        hardware.deferVolumeWrites = true
+        XCTAssertTrue(controller.setMuted(false))
+        hardware.deferredVolumeWrites[1] = [1: 0.30, 2: 0]
+        hardware.completeDeferredWrites()
+        hardware.deferVolumeWrites = false
+
+        hardware.volumeWritesSucceed = false
+        XCTAssertFalse(controller.setMuted(true))
+        XCTAssertTrue(controller.hasOutstandingWork)
+        hardware.volumeWritesSucceed = true
+        XCTAssertTrue(controller.setMuted(true))
+        XCTAssertEqual(hardware.volumeSnapshots[1], [1: 0, 2: 0])
+        XCTAssertFalse(controller.hasOutstandingWork)
+        XCTAssertTrue(controller.setMuted(false))
+        XCTAssertEqual(hardware.volumeSnapshots[1], baseline)
+    }
+
+    func testGainOnlyRestoreDoesNotTransferAnUnmuteOrChangeNativeMute() throws {
+        let suite = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["uid:stable-1": ["1": 0.30, "2": 0.60]], forKey: BruteDefaults.pendingInputVolumeRestorations)
+        defaults.set(["uid:stable-1"], forKey: BruteDefaults.appMutedInputDevices)
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
+        hardware.volumeSnapshots[1] = [1: 0.30, 2: 0]
+        hardware.muteProperties = [1, 2]
+        hardware.mutes = [1: false, 2: true]
+        hardware.deferVolumeWrites = true
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
+
+        hardware.defaultDeviceID = 2
+        controller.handleDefaultDeviceChange()
+        XCTAssertEqual(hardware.mutes[2], true)
+
+        hardware.mutes[1] = true
+        hardware.completeDeferredWrites()
+        controller.refreshState()
+        XCTAssertEqual(hardware.volumeSnapshots[1], [1: 0.30, 2: 0.60])
+        XCTAssertEqual(hardware.mutes[1], true)
+        XCTAssertEqual(hardware.setMuteCalls, [])
+        XCTAssertFalse(controller.hasOutstandingWork)
+    }
+
+    func testRestoreConfirmsIfOnlyAnIntentionallySilentChannelRemains() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumeSnapshots[1] = [1: 0, 2: 0.65]
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        XCTAssertTrue(controller.setMuted(true))
+        hardware.volumeSnapshots[1] = [1: 0]
+
+        XCTAssertTrue(controller.setMuted(false))
+        XCTAssertEqual(controller.state, .muted)
+        XCTAssertEqual(hardware.volumeSnapshots[1], [1: 0])
+        XCTAssertFalse(controller.hasOutstandingWork)
+    }
+
     func testWakeRefusesCachedIdentityWhenLiveUIDCannotBeRead() {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1, identifierPrefix: "stable")
         hardware.muteProperties.insert(1)

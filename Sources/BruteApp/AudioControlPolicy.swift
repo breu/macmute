@@ -93,6 +93,16 @@ enum AudioControlPolicy {
         !volumes.isEmpty && volumes.values.allSatisfy { $0 <= silenceThreshold }
     }
 
+    /// Allow small driver rounding without treating a silent channel as restored
+    /// when it was supposed to be live.
+    static func restoredVolumesMatch(_ actual: InputVolumeSnapshot, target: InputVolumeSnapshot) -> Bool {
+        actual.count == target.count && target.allSatisfy { element, expected in
+            guard let observed = actual[element] else { return false }
+            return (observed <= silenceThreshold) == (expected <= silenceThreshold)
+                && abs(observed - expected) < 0.01
+        }
+    }
+
     /// Baseline to restore to, given what the device reports now.
     ///
     /// A channel that has disappeared since muting is dropped rather than blocking

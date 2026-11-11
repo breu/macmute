@@ -25,6 +25,7 @@ final class MicMuteController {
     private var savedVolumes: [String: InputVolumeSnapshot]
     private var appMutedDeviceIdentifiers: Set<String>
     private var pendingDesiredStates: [String: Bool]
+    private var pendingVolumeRestorations: [String: InputVolumeSnapshot]
     private var pendingForcedWrites: Set<String> = []
     private var knownDeviceIDs: [String: AudioDeviceID] = [:]
     private var cachedDeviceIdentifiers: [AudioDeviceID: String] = [:]
@@ -66,9 +67,10 @@ final class MicMuteController {
         self.hardware = hardware
         self.defaults = defaults
         self.observesSystemChanges = observeSystemChanges
-        savedVolumes = Self.loadSavedVolumes(from: defaults)
+        savedVolumes = Self.loadVolumeSnapshots(from: defaults, key: Self.savedVolumesDefaultsKey)
         appMutedDeviceIdentifiers = Self.loadAppMutedDeviceIdentifiers(from: defaults)
         pendingDesiredStates = Self.loadPendingDesiredStates(from: defaults)
+        pendingVolumeRestorations = Self.loadVolumeSnapshots(from: defaults, key: BruteDefaults.pendingInputVolumeRestorations)
         currentDeviceID = hardware.defaultInputDeviceID()
         // The static form, because an instance method would capture `self` before
         // `state` below has a value.
@@ -81,7 +83,7 @@ final class MicMuteController {
         if state == .unmuted,
            let currentDeviceID,
            let identity = validatedIdentity(for: currentDeviceID, mustRemainDefault: true),
-           pendingDesiredStates[identity.key] != true {
+           pendingState(for: identity.key) == nil {
             removeAppMuteOwnership(identity)
         }
         lastError = Self.availabilityError(for: state, hasDevice: currentDeviceID != nil)
@@ -111,10 +113,6 @@ final class MicMuteController {
             return false
         }
 
-        if pendingDesiredStates[identity.key].map({ $0 != muted }) == true {
-            // Supersede an accepted write even if its effect has not reached readback yet.
-            pendingForcedWrites.insert(identity.key)
-        }
         setPendingDesiredState(muted, for: identity)
         let accepted = applyMute(muted, to: identity, forceWrite: pendingForcedWrites.contains(identity.key))
         guard identityStillMatches(identity) else {
@@ -140,7 +138,7 @@ final class MicMuteController {
         guard let deviceID = currentDeviceID,
               let identity = validatedIdentity(for: deviceID, mustRemainDefault: true),
               ownsMute(identity),
-              pendingDesiredStates[identity.key] == nil
+              pendingState(for: identity.key) == nil
         else { return }
         setPendingDesiredState(true, for: identity)
         scheduleStatePoll()
@@ -154,8 +152,8 @@ final class MicMuteController {
         }
         if let deviceID = currentDeviceID,
            let identity = validatedIdentity(for: deviceID, mustRemainDefault: true),
-           ownsMute(identity) || pendingDesiredStates[identity.key] == true,
-           pendingDesiredStates[identity.key] != false {
+           ownsMute(identity) || pendingState(for: identity.key) == true,
+           pendingState(for: identity.key) != false {
             _ = setMuted(true, retryOnFailure: true)
         }
         refreshState()
@@ -181,6 +179,7 @@ final class MicMuteController {
         let departingState = oldDeviceID.flatMap { deviceID in
             oldIdentity?.matches == true ? readState(on: deviceID) : nil
         } ?? state
+        // A gain restore is local to the device it started on.
         let departingPendingState = oldIdentity.flatMap { pendingDesiredStates[$0.key] }
         let desiredStateToCarry = pendingDesiredStateAcrossUnavailableDevice
             ?? departingPendingState
@@ -192,7 +191,7 @@ final class MicMuteController {
             if oldIdentity?.matches == true,
                departingPendingState != true,
                let identity = validatedIdentity(for: oldDeviceID, mustRemainDefault: false),
-               ownsMute(identity),
+               ownsMute(identity) || pendingVolumeRestorations[identity.key] != nil,
                !restoreAppOwnedMute(identity) {
                 BruteLog.audio.warning("Could not restore departing input device; restoration remains queued")
             } else if oldIdentity?.matches == false,
@@ -221,8 +220,11 @@ final class MicMuteController {
         if let desiredState = desiredStateToCarry {
             if let identity = validatedIdentity(for: newDeviceID, mustRemainDefault: true) {
                 setPendingDesiredState(desiredState, for: identity)
-                let accepted = applyMute(desiredState, to: identity)
+                let accepted = applyMute(
+                    desiredState, to: identity, forceWrite: pendingForcedWrites.contains(identity.key)
+                )
                 if accepted, identityStillMatches(identity) {
+                    pendingForcedWrites.remove(identity.key)
                     confirm(readState(on: newDeviceID), desired: desiredState, identity: identity)
                 }
             }
@@ -246,13 +248,13 @@ final class MicMuteController {
         }
         let actual = readState(on: deviceID)
         let trackedKey = trackedKey(for: deviceID)
-        if (pendingDesiredStates[trackedKey] != nil
+        if (pendingState(for: trackedKey) != nil
             || (actual == .unmuted && appMutedDeviceIdentifiers.contains(trackedKey))),
            let identity = validatedIdentity(for: deviceID, mustRemainDefault: true) {
-            if let desired = pendingDesiredStates[identity.key] {
+            if let desired = pendingState(for: identity.key) {
                 confirm(actual, desired: desired, identity: identity)
             }
-            if actual == .unmuted, pendingDesiredStates[identity.key] != true {
+            if actual == .unmuted, pendingState(for: identity.key) == nil {
                 removeAppMuteOwnership(identity)
             }
         }
@@ -295,7 +297,11 @@ final class MicMuteController {
     /// confirmed mute on the current device is steady state.
     var hasOutstandingWork: Bool {
         let currentKey = currentDeviceID.map { trackedKey(for: $0) }
-        return pendingDesiredStates.keys.contains { $0 == currentKey || knownDeviceIDs[$0] != nil }
+        func isKnown(_ key: String) -> Bool {
+            key == currentKey || knownDeviceIDs[key] != nil
+        }
+        return pendingDesiredStates.keys.contains(where: isKnown)
+            || pendingVolumeRestorations.keys.contains(where: isKnown)
             || appMutedDeviceIdentifiers.contains { identifier in
                 guard let deviceID = knownDeviceIDs[identifier] else { return false }
                 return deviceID != currentDeviceID
@@ -337,13 +343,36 @@ final class MicMuteController {
     // MARK: - Hardware access
 
     /// The one place a device's controls are written.
-    private func applyMute(_ muted: Bool, to identity: DeviceIdentity, forceWrite: Bool = false) -> Bool {
+    private func applyMute(
+        _ muted: Bool,
+        to identity: DeviceIdentity,
+        forceWrite: Bool = false,
+        gainOnly: Bool = false
+    ) -> Bool {
+        let accepted = writeMuteState(muted, to: identity, forceWrite: forceWrite, gainOnly: gainOnly)
+        if accepted, muted, let target = pendingVolumeRestorations[identity.key] {
+            if savedVolumes[identity.key] == nil {
+                savedVolumes[identity.key] = target
+                persistSavedVolumes()
+            }
+            setPendingVolumeRestoration(nil, for: identity.key)
+        }
+        return accepted
+    }
+
+    private func writeMuteState(
+        _ muted: Bool,
+        to identity: DeviceIdentity,
+        forceWrite: Bool,
+        gainOnly: Bool
+    ) -> Bool {
         guard identityStillMatches(identity) else { return false }
         let deviceID = identity.deviceID
+        let pendingRestore = pendingVolumeRestorations[identity.key]
         // A channel may have appeared before its change notification arrives.
         // Rediscover once per write so an old inventory can't omit that channel.
         hardware.invalidateControlCaches(for: deviceID)
-        let hasNativeMute = hardware.hasMuteProperty(on: deviceID)
+        let hasNativeMute = !gainOnly && hardware.hasMuteProperty(on: deviceID)
         let nativeMuteIsSettable = hasNativeMute && hardware.isMuteSettable(on: deviceID)
         if nativeMuteIsSettable {
             guard let current = hardware.readMute(on: deviceID) else { return false }
@@ -358,13 +387,14 @@ final class MicMuteController {
                     return false
                 }
                 guard identityStillMatches(identity) else { return false }
-                if muted { return true }
+                // Finish the native unmute before starting a gain restore, so
+                // later gain-only retries never need to touch native mute.
+                if muted || hardware.readMute(on: deviceID) != false { return true }
             }
-            if let volumes = hardware.readVolumes(on: deviceID),
-               AudioControlPolicy.volumesAreMuted(volumes) || (forceWrite && savedVolumes[identity.key] != nil) {
-                // Continue so an explicit unmute also restores a fallback-zeroed volume.
-            } else {
-                return true
+            if pendingRestore == nil {
+                guard let volumes = hardware.readVolumes(on: deviceID),
+                      AudioControlPolicy.volumesAreMuted(volumes) || (forceWrite && savedVolumes[identity.key] != nil)
+                else { return true }
             }
         }
 
@@ -385,7 +415,7 @@ final class MicMuteController {
                 return true
             }
             // A retry may observe only some channels at zero. Keep the original baseline.
-            if !ownsMute(identity) || savedVolumes[identity.key] == nil {
+            if pendingRestore == nil, !ownsMute(identity) || savedVolumes[identity.key] == nil {
                 savedVolumes[identity.key] = currentVolumes
                 persistSavedVolumes()
             }
@@ -400,18 +430,24 @@ final class MicMuteController {
             return true
         }
 
-        if !AudioControlPolicy.volumesAreMuted(currentVolumes), !forceWrite {
+        // A live gain before Brute attempts a restore belongs to the user or
+        // another app. Once we start a restore, partial progress is still ours.
+        if pendingRestore == nil, !AudioControlPolicy.volumesAreMuted(currentVolumes), !forceWrite {
             return true
         }
-        let restoredVolumes = AudioControlPolicy.restorationVolumes(
-            saved: savedVolumes[identity.key],
-            current: currentVolumes
-        )
-        guard identityStillMatches(identity), hardware.setVolumes(restoredVolumes, on: deviceID) else { return false }
+        let baseline = (savedVolumes[identity.key] ?? [:]).merging(pendingRestore ?? [:]) { _, target in target }
+        let restoredVolumes = AudioControlPolicy.restorationVolumes(saved: baseline, current: currentVolumes)
         guard identityStillMatches(identity) else { return false }
-        savedVolumes[identity.key] = restoredVolumes
-        persistSavedVolumes()
-        return true
+        let plan = (pendingRestore ?? [:]).merging(restoredVolumes) { _, target in target }
+        setPendingVolumeRestoration(plan, for: identity.key)
+        if !forceWrite, AudioControlPolicy.restoredVolumesMatch(currentVolumes, target: restoredVolumes) {
+            return true
+        }
+        guard identityStillMatches(identity), hardware.setVolumes(restoredVolumes, on: deviceID) else {
+            if pendingRestore == nil { setPendingVolumeRestoration(nil, for: identity.key) }
+            return false
+        }
+        return identityStillMatches(identity)
     }
 
     private func readState(on deviceID: AudioDeviceID) -> MicrophoneState {
@@ -436,9 +472,9 @@ final class MicMuteController {
         guard identityStillMatches(identity) else { return false }
         let deviceID = identity.deviceID
         // Restore both native mute and any fallback volume this app changed.
-        let restored = applyMute(false, to: identity)
-        if restored, identityStillMatches(identity), readState(on: deviceID) == .unmuted {
-            removeAppMuteOwnership(identity)
+        let restored = applyMute(false, to: identity, gainOnly: pendingVolumeRestorations[identity.key] != nil)
+        if restored, identityStillMatches(identity) {
+            confirm(readState(on: deviceID), desired: false, identity: identity)
         }
         return restored
     }
@@ -467,7 +503,9 @@ final class MicMuteController {
 
     private func retryPendingRestorations(excluding excludedDeviceID: AudioDeviceID?) {
         let pending = Array(appMutedDeviceIdentifiers).compactMap { identifier -> AudioDeviceID? in
-            guard let deviceID = validatedDeviceID(for: identifier), deviceID != excludedDeviceID else { return nil }
+            guard pendingVolumeRestorations[identifier] == nil,
+                  let deviceID = validatedDeviceID(for: identifier),
+                  deviceID != excludedDeviceID else { return nil }
             return deviceID
         }
         for deviceID in pending {
@@ -479,7 +517,9 @@ final class MicMuteController {
 
     private func retryPendingDesiredStates(includingOtherDevices: Bool = true) {
         let currentKey = currentDeviceID.map { trackedKey(for: $0) }
-        let pending = Array(pendingDesiredStates).compactMap { identifier, desired -> (DeviceIdentity, Bool)? in
+        var requested = pendingVolumeRestorations.mapValues { _ in false }
+        requested.merge(pendingDesiredStates) { _, explicit in explicit }
+        let pending = requested.compactMap { identifier, desired -> (DeviceIdentity, Bool)? in
             guard includingOtherDevices || identifier == currentKey else { return nil }
             let deviceID = identifier == currentKey ? currentDeviceID : validatedDeviceID(for: identifier)
             guard let deviceID else { return nil }
@@ -490,7 +530,12 @@ final class MicMuteController {
             return (identity, desired)
         }
         for (identity, desired) in pending {
-            let accepted = applyMute(desired, to: identity, forceWrite: pendingForcedWrites.contains(identity.key))
+            let accepted = applyMute(
+                desired,
+                to: identity,
+                forceWrite: pendingForcedWrites.contains(identity.key),
+                gainOnly: pendingDesiredStates[identity.key] == nil
+            )
             if accepted, identityStillMatches(identity) {
                 pendingForcedWrites.remove(identity.key)
                 confirm(readState(on: identity.deviceID), desired: desired, identity: identity)
@@ -631,7 +676,26 @@ final class MicMuteController {
         desired: Bool,
         identity: DeviceIdentity
     ) {
-        guard !pendingForcedWrites.contains(identity.key), actual.mutedValue == desired else { return }
+        guard !pendingForcedWrites.contains(identity.key) else { return }
+        if !desired, let target = pendingVolumeRestorations[identity.key] {
+            guard identityStillMatches(identity),
+                  let volumes = hardware.readVolumes(on: identity.deviceID),
+                  !volumes.isEmpty
+            else { return }
+            let liveTarget = target.filter { volumes[$0.key] != nil }
+            guard AudioControlPolicy.restoredVolumesMatch(volumes, target: liveTarget) else { return }
+            let gainOnly = pendingDesiredStates[identity.key] == nil
+            let restoredSilentBaseline = AudioControlPolicy.volumesAreMuted(liveTarget)
+                && (!hardware.hasMuteProperty(on: identity.deviceID) || hardware.readMute(on: identity.deviceID) == false)
+            guard gainOnly || actual == .unmuted || restoredSilentBaseline,
+                  identityStillMatches(identity)
+            else { return }
+            savedVolumes[identity.key] = (savedVolumes[identity.key] ?? [:]).merging(target) { _, restored in restored }
+            persistSavedVolumes()
+            setPendingVolumeRestoration(nil, for: identity.key)
+        } else if actual.mutedValue != desired {
+            return
+        }
         clearPendingDesiredState(forIdentifier: identity.key)
         if identity.mustRemainDefault {
             currentWriteFailed = false
@@ -653,6 +717,10 @@ final class MicMuteController {
         if let desired = pendingDesiredStates.removeValue(forKey: sessionKey) {
             pendingDesiredStates[persistentKey] = desired
         }
+        if let target = pendingVolumeRestorations[sessionKey] {
+            setPendingVolumeRestoration(nil, for: sessionKey)
+            setPendingVolumeRestoration(target, for: persistentKey)
+        }
         if pendingForcedWrites.remove(sessionKey) != nil {
             pendingForcedWrites.insert(persistentKey)
         }
@@ -665,11 +733,21 @@ final class MicMuteController {
     // MARK: - Persistence
 
     private func persistSavedVolumes() {
-        let persistent = savedVolumes.filter { $0.key.hasPrefix("uid:") }
+        persistVolumeSnapshots(savedVolumes, key: Self.savedVolumesDefaultsKey)
+    }
+
+    private func setPendingVolumeRestoration(_ target: InputVolumeSnapshot?, for identifier: String) {
+        guard pendingVolumeRestorations[identifier] != target else { return }
+        pendingVolumeRestorations[identifier] = target
+        persistVolumeSnapshots(pendingVolumeRestorations, key: BruteDefaults.pendingInputVolumeRestorations)
+    }
+
+    private func persistVolumeSnapshots(_ snapshots: [String: InputVolumeSnapshot], key: String) {
+        let persistent = snapshots.filter { $0.key.hasPrefix("uid:") }
         let encoded = persistent.mapValues { snapshot in
             Dictionary(uniqueKeysWithValues: snapshot.map { (String($0.key), Double($0.value)) })
         }
-        defaults.set(encoded, forKey: Self.savedVolumesDefaultsKey)
+        defaults.set(encoded, forKey: key)
     }
 
     private func persistAppMutedDeviceIdentifiers() {
@@ -678,9 +756,18 @@ final class MicMuteController {
     }
 
     private func setPendingDesiredState(_ desired: Bool, for identity: DeviceIdentity) {
+        if pendingState(for: identity.key).map({ $0 != desired }) == true {
+            // Supersede an accepted write even if its effect has not reached readback yet.
+            pendingForcedWrites.insert(identity.key)
+        }
         knownDeviceIDs[identity.key] = identity.deviceID
         pendingDesiredStates[identity.key] = desired
         persistPendingDesiredStates()
+    }
+
+    private func pendingState(for identifier: String) -> Bool? {
+        if let desired = pendingDesiredStates[identifier] { return desired }
+        return pendingVolumeRestorations[identifier] == nil ? nil : false
     }
 
     private func clearPendingDesiredState(forIdentifier identifier: String?) {
@@ -696,8 +783,8 @@ final class MicMuteController {
         defaults.set(persistent, forKey: Self.pendingDesiredStatesDefaultsKey)
     }
 
-    private static func loadSavedVolumes(from defaults: UserDefaults) -> [String: InputVolumeSnapshot] {
-        guard let values = defaults.dictionary(forKey: savedVolumesDefaultsKey) else { return [:] }
+    private static func loadVolumeSnapshots(from defaults: UserDefaults, key: String) -> [String: InputVolumeSnapshot] {
+        guard let values = defaults.dictionary(forKey: key) else { return [:] }
         return values.reduce(into: [:]) { result, pair in
             guard isPersistentKey(pair.key) else { return }
             if let number = validNumericValue(pair.value) {
@@ -717,7 +804,8 @@ final class MicMuteController {
                 guard volume.isFinite, volume >= 0, volume <= 1 else { return }
                 snapshot[key] = volume
             }
-            if !snapshot.isEmpty, snapshot.values.contains(where: { $0 > 0 }) {
+            if !snapshot.isEmpty,
+               key == BruteDefaults.pendingInputVolumeRestorations || snapshot.values.contains(where: { $0 > 0 }) {
                 result[pair.key] = snapshot
             }
         }

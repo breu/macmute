@@ -13,7 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             muteController: .shared,
             hotkeyManager: .shared,
             actionController: .shared,
-            launchManager: LaunchAtLoginManager.shared
+            launchManager: LaunchAtLoginManager.shared,
+            iconPreferences: IconPreferences(defaults: .standard)
         )
     }
 
