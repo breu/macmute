@@ -15,6 +15,7 @@ enum BruteStrings {
 
     static let preferences = "Preferences…"
     static let help = "Brute Help…"
+    static let privacyPolicy = "Privacy Policy…"
     static let about = "About Brute"
     static let quit = "Quit Brute"
 
@@ -40,6 +41,9 @@ enum BruteStrings {
     static let helpUnavailableTitle = "Brute Help could not be opened"
     static let helpUnavailableBody =
         "The bundled user guide is unavailable or no app can open HTML files."
+    static let privacyPolicyUnavailableTitle = "The privacy policy could not be opened"
+    static let privacyPolicyUnavailableBody =
+        "The bundled privacy policy is unavailable or no app can open HTML files."
 
     static func microphoneState(_ value: String, detail: String? = nil) -> String {
         let title = "\(microphoneStatePrefix): \(value)"

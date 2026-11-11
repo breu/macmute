@@ -77,7 +77,7 @@ final class HotkeyManagerTests: XCTestCase {
             retryDelay: 3_600,
             installHandlerOverride: { .success(()) },
             registrationOverride: { _ in
-                registrationAvailable ? .success(()) : .failure(.accessibilityPermissionRequired)
+                registrationAvailable ? .success(()) : .failure(.inputMonitoringPermissionRequired)
             }
         )
 
@@ -135,8 +135,8 @@ final class HotkeyManagerTests: XCTestCase {
         var downs = 0
         var ups = 0
         var cancellations = 0
-        manager.onHotkeyDown = { downs += 1 }
-        manager.onHotkeyUp = { ups += 1 }
+        manager.onHotkeyDown = { _ in downs += 1 }
+        manager.onHotkeyUp = { _ in ups += 1 }
         manager.onHotkeyCancelled = { cancellations += 1 }
 
         manager.handleHotkeyEdge(isDown: true)
@@ -164,5 +164,141 @@ final class HotkeyManagerTests: XCTestCase {
         manager.shutdown()
 
         XCTAssertFalse(manager.hasActiveRegistration)
+    }
+
+    func testFunctionKeyPermissionRevocationCancelsPressAndAllowsRecovery() throws {
+        let suiteName = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(["keyCode": Int(KeyboardShortcut.fn.keyCode), "modifiers": 0], forKey: BruteDefaults.shortcut)
+        let input = FakeHotkeyInput()
+        let manager = HotkeyManager(
+            defaults: defaults, observesWake: false, input: input, installHandlerOverride: { .success(()) }
+        )
+        defer { manager.shutdown() }
+        var edges: [String] = []
+        manager.onHotkeyDown = { _ in edges.append("down") }
+        manager.onHotkeyUp = { _ in edges.append("up") }
+        manager.onHotkeyCancelled = { edges.append("cancel") }
+
+        let originalMonitor = try XCTUnwrap(input.monitors.last)
+        originalMonitor.functionEdge(isDown: true)
+        input.hasPermission = false
+        manager.verifyFunctionKeyMonitor()
+
+        XCTAssertEqual(edges, ["down", "cancel"])
+        XCTAssertFalse(originalMonitor.isEnabled)
+        XCTAssertFalse(manager.hasActiveRegistration)
+        XCTAssertEqual(manager.lastRegistrationError, .inputMonitoringPermissionRequired)
+
+        input.hasPermission = true
+        manager.retryRegistrationNow()
+        let replacement = try XCTUnwrap(input.monitors.last)
+        XCTAssertFalse(originalMonitor === replacement)
+        originalMonitor.functionEdge(isDown: false)
+        replacement.functionEdge(isDown: true)
+        replacement.functionEdge(isDown: false)
+
+        XCTAssertEqual(edges, ["down", "cancel", "down", "up"])
+        XCTAssertTrue(manager.hasActiveRegistration)
+        XCTAssertNil(manager.lastRegistrationError)
+        XCTAssertEqual(input.permissionPrompts, [true, false, false])
+    }
+
+    func testFunctionChordCancelsGestureAndCaptureSuspendsHotkey() throws {
+        let suiteName = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(["keyCode": Int(KeyboardShortcut.fn.keyCode), "modifiers": 0], forKey: BruteDefaults.shortcut)
+        let input = FakeHotkeyInput()
+        let manager = HotkeyManager(
+            defaults: defaults, observesWake: false, input: input, installHandlerOverride: { .success(()) }
+        )
+        defer { manager.shutdown() }
+        var edges: [String] = []
+        manager.onHotkeyDown = { _ in edges.append("down") }
+        manager.onHotkeyUp = { _ in edges.append("up") }
+        manager.onHotkeyCancelled = { edges.append("cancel") }
+        let monitor = try XCTUnwrap(input.monitors.last)
+
+        monitor.functionEdge(isDown: true)
+        monitor.deliver(.otherKeyDown)
+        monitor.functionEdge(isDown: false)
+        manager.setShortcutRecording(true)
+        monitor.functionEdge(isDown: true)
+        manager.setShortcutRecording(false)
+        monitor.functionEdge(isDown: false)
+        monitor.functionEdge(isDown: true)
+        monitor.functionEdge(isDown: false)
+
+        XCTAssertEqual(edges, ["down", "cancel", "down", "up"])
+    }
+
+    func testMissingReleaseCancelsRatherThanCommittingTap() throws {
+        let suiteName = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let input = FakeHotkeyInput()
+        let manager = HotkeyManager(
+            defaults: defaults, observesWake: false, input: input,
+            installHandlerOverride: { .success(()) }, registrationOverride: { _ in .success(()) }
+        )
+        defer { manager.shutdown() }
+        var edges: [String] = []
+        manager.onHotkeyDown = { _ in edges.append("down") }
+        manager.onHotkeyUp = { _ in edges.append("up") }
+        manager.onHotkeyCancelled = { edges.append("cancel") }
+
+        manager.handleHotkeyEdge(isDown: true)
+        input.keyIsPressed = false
+        manager.verifyPressedKey()
+        manager.handleHotkeyEdge(isDown: false)
+        manager.handleHotkeyEdge(isDown: true)
+        manager.handleHotkeyEdge(isDown: false)
+
+        XCTAssertEqual(edges, ["down", "cancel", "down", "up"])
+    }
+}
+
+@MainActor
+private final class FakeHotkeyInput: HotkeyInputSystem {
+    var hasPermission = true
+    var keyIsPressed = true
+    var permissionPrompts: [Bool] = []
+    var monitors: [FakeFunctionKeyMonitor] = []
+
+    func inputMonitoringAllowed(prompt: Bool) -> Bool {
+        permissionPrompts.append(prompt)
+        return hasPermission
+    }
+
+    func monitorFunctionKey(
+        _ handle: @escaping @MainActor (FunctionKeyInput, TimeInterval) -> Void
+    ) -> (any FunctionKeyMonitor)? {
+        let monitor = FakeFunctionKeyMonitor(handle: handle)
+        monitors.append(monitor)
+        return monitor
+    }
+
+    func isPressed(_ shortcut: KeyboardShortcut) -> Bool { keyIsPressed }
+}
+
+@MainActor
+private final class FakeFunctionKeyMonitor: FunctionKeyMonitor {
+    private(set) var isEnabled = true
+    let handle: @MainActor (FunctionKeyInput, TimeInterval) -> Void
+
+    init(handle: @escaping @MainActor (FunctionKeyInput, TimeInterval) -> Void) {
+        self.handle = handle
+    }
+
+    func stop() { isEnabled = false }
+
+    func functionEdge(isDown: Bool) {
+        deliver(.flagsChanged(isFunctionKey: true, functionIsDown: isDown, chordModifiersAreDown: false))
+    }
+
+    func deliver(_ input: FunctionKeyInput) {
+        handle(input, ProcessInfo.processInfo.systemUptime)
     }
 }

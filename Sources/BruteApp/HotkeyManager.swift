@@ -1,5 +1,4 @@
 import AppKit
-@preconcurrency import ApplicationServices
 import Carbon.HIToolbox
 import Foundation
 
@@ -76,7 +75,7 @@ enum HotkeyRegistrationError: LocalizedError, Equatable {
     case invalidShortcut
     case eventHandlerUnavailable(OSStatus)
     case shortcutUnavailable(OSStatus)
-    case accessibilityPermissionRequired
+    case inputMonitoringPermissionRequired
     case monitorUnavailable
 
     var errorDescription: String? {
@@ -87,8 +86,8 @@ enum HotkeyRegistrationError: LocalizedError, Equatable {
             "The system hotkey handler could not start (OSStatus \(status))."
         case .shortcutUnavailable:
             "That shortcut is already in use by macOS or another app."
-        case .accessibilityPermissionRequired:
-            "Grant Accessibility access, then choose fn again."
+        case .inputMonitoringPermissionRequired:
+            "Allow Brute in System Settings → Privacy & Security → Input Monitoring to use fn."
         case .monitorUnavailable:
             "The fn-key monitor could not start."
         }
@@ -99,14 +98,14 @@ enum HotkeyRegistrationError: LocalizedError, Equatable {
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    var onHotkeyDown: (() -> Void)?
-    var onHotkeyUp: (() -> Void)?
+    var onHotkeyDown: ((TimeInterval?) -> Void)?
+    var onHotkeyUp: ((TimeInterval?) -> Void)?
     var onHotkeyCancelled: (() -> Void)?
     private(set) var lastRegistrationError: HotkeyRegistrationError?
 
     private enum Registration {
         case carbon(reference: EventHotKeyRef, id: UInt32)
-        case functionKey(global: Any, local: Any, id: UUID)
+        case functionKey(monitor: any FunctionKeyMonitor, id: UUID)
         case simulated
     }
 
@@ -134,9 +133,8 @@ final class HotkeyManager {
                 if status != noErr {
                     BruteLog.hotkey.error("Failed to unregister hotkey (OSStatus \(status))")
                 }
-            case .functionKey(let global, let local, _):
-                NSEvent.removeMonitor(global)
-                NSEvent.removeMonitor(local)
+            case .functionKey(let monitor, _):
+                monitor.stop()
             case .simulated, nil:
                 break
             }
@@ -161,14 +159,20 @@ final class HotkeyManager {
     private static var nextHotKeyID: UInt32 = 1
     private let systemRegistration = SystemRegistration()
     private var hotkeyIsDown = false
+    private var functionKeyPress = FunctionKeyPress()
+    private var isRecordingShortcut = false
+    private var ignorePressesBefore: TimeInterval?
+    private var pressWatchdog: Task<Void, Never>?
+    private var monitorHealthTask: Task<Void, Never>?
     private var registrationRetryTask: Task<Void, Never>?
     private var eventHandlerAvailable = false
     private var isShutDown = false
     private let defaults: UserDefaults
     private let retryDelay: TimeInterval
+    private let input: any HotkeyInputSystem
     private let installHandlerOverride: (() -> Result<Void, HotkeyRegistrationError>)?
     private let registrationOverride: ((KeyboardShortcut) -> Result<Void, HotkeyRegistrationError>)?
-    private var wakeObserver: NotificationObservation?
+    private var workspaceObservations: [NotificationObservation] = []
     private var nextRetryDelay: TimeInterval
     private static let maximumRetryDelay: TimeInterval = 60
 
@@ -181,10 +185,12 @@ final class HotkeyManager {
         defaults: UserDefaults = .standard,
         observesWake: Bool = true,
         retryDelay: TimeInterval = 5,
+        input: (any HotkeyInputSystem)? = nil,
         installHandlerOverride: (() -> Result<Void, HotkeyRegistrationError>)? = nil,
         registrationOverride: ((KeyboardShortcut) -> Result<Void, HotkeyRegistrationError>)? = nil
     ) {
         self.defaults = defaults
+        self.input = input ?? SystemHotkeyInput()
         let initialRetryDelay = retryDelay.isFinite && retryDelay > 0 ? retryDelay : 5
         self.retryDelay = min(initialRetryDelay, Self.maximumRetryDelay)
         nextRetryDelay = self.retryDelay
@@ -211,12 +217,14 @@ final class HotkeyManager {
             scheduleRegistrationRetry()
         }
         if observesWake {
-            observeWake()
+            observeWorkspace()
         }
     }
 
     deinit {
         registrationRetryTask?.cancel()
+        pressWatchdog?.cancel()
+        monitorHealthTask?.cancel()
         Task { @MainActor [systemRegistration] in systemRegistration.shutdown() }
     }
 
@@ -227,9 +235,10 @@ final class HotkeyManager {
         cancelActivePress()
         registrationRetryTask?.cancel()
         registrationRetryTask = nil
+        stopMonitorHealthChecks()
         systemRegistration.shutdown()
         eventHandlerAvailable = false
-        wakeObserver = nil
+        workspaceObservations.removeAll()
         onHotkeyDown = nil
         onHotkeyUp = nil
         onHotkeyCancelled = nil
@@ -241,7 +250,13 @@ final class HotkeyManager {
     func updateShortcut(_ shortcut: KeyboardShortcut) -> Result<Void, HotkeyRegistrationError> {
         guard !isShutDown else { return .failure(.eventHandlerUnavailable(OSStatus(eventNotHandledErr))) }
         guard shortcut.isValid else { return .failure(.invalidShortcut) }
-        if shortcut == currentShortcut, hasActiveRegistration { return .success(()) }
+        if shortcut == currentShortcut {
+            verifyFunctionKeyMonitor()
+            if hasActiveRegistration {
+                recordRegistrationSuccess()
+                return .success(())
+            }
+        }
         if !shortcut.isFn, !eventHandlerAvailable {
             switch installHandler() {
             case .success:
@@ -255,9 +270,9 @@ final class HotkeyManager {
         switch makeRegistration(for: shortcut) {
         case .success(let replacement):
             cancelActivePress()
-            systemRegistration.unregisterShortcut()
-            systemRegistration.active = replacement
+            unregisterShortcut()
             currentShortcut = shortcut
+            activate(replacement)
             Self.saveShortcut(shortcut, to: defaults)
             recordRegistrationSuccess(registrationChanged: true)
             return .success(())
@@ -297,6 +312,8 @@ final class HotkeyManager {
                 guard parameterStatus == noErr else { return OSStatus(eventNotHandledErr) }
                 let context = Unmanaged<CarbonCallbackContext>.fromOpaque(userData).takeUnretainedValue()
                 let isDown = GetEventKind(eventRef) == UInt32(kEventHotKeyPressed)
+                let eventTime = GetEventTime(eventRef)
+                let timestamp = eventTime > 0 ? eventTime : ProcessInfo.processInfo.systemUptime
                 // Carbon calls the application event target on the main event loop
                 // and needs a synchronous handled/not-handled answer.
                 return MainActor.assumeIsolated {
@@ -305,7 +322,7 @@ final class HotkeyManager {
                           receivedID.id == id,
                           receivedID.signature == HotkeyManager.hotKeySignature
                     else { return OSStatus(eventNotHandledErr) }
-                    manager.handleHotkeyEdge(isDown: isDown)
+                    manager.handleHotkeyEdge(isDown: isDown, timestamp: timestamp)
                     return noErr
                 }
             },
@@ -332,7 +349,7 @@ final class HotkeyManager {
     ) -> Result<Void, HotkeyRegistrationError> {
         switch makeRegistration(for: shortcut) {
         case .success(let registration):
-            systemRegistration.active = registration
+            activate(registration)
             return .success(())
         case .failure(let error):
             return .failure(error)
@@ -373,69 +390,149 @@ final class HotkeyManager {
     private func makeFunctionKeyRegistration(
         promptForPermission: Bool
     ) -> Result<Registration, HotkeyRegistrationError> {
-        guard Self.hasAccessibilityPermission(prompt: promptForPermission) else {
-            return .failure(.accessibilityPermissionRequired)
+        guard input.inputMonitoringAllowed(prompt: promptForPermission) else {
+            return .failure(.inputMonitoringPermissionRequired)
         }
         let id = UUID()
-        guard let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
-            let isDown = event.modifierFlags.contains(.function)
-            Task { @MainActor [weak self] in
-                self?.handleFnEdge(isDown: isDown, registrationID: id)
-            }
+        guard let monitor = input.monitorFunctionKey({ [weak self] event, timestamp in
+            self?.handleFunctionKeyInput(event, timestamp: timestamp, registrationID: id)
         }) else {
             return .failure(.monitorUnavailable)
         }
-        guard let local = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
-            // AppKit delivers local monitors synchronously on the main thread.
-            guard Thread.isMainThread else { return event }
-            MainActor.assumeIsolated {
-                self?.handleFnEdge(isDown: event.modifierFlags.contains(.function), registrationID: id)
-            }
-            return event
-        }) else {
-            NSEvent.removeMonitor(global)
-            return .failure(.monitorUnavailable)
-        }
-        return .success(.functionKey(global: global, local: local, id: id))
+        return .success(.functionKey(monitor: monitor, id: id))
     }
 
-    private func handleFnEdge(isDown: Bool, registrationID: UUID) {
-        guard case .functionKey(_, _, let activeID) = systemRegistration.active,
+    private func activate(_ registration: Registration) {
+        systemRegistration.active = registration
+        if case .functionKey = registration {
+            monitorHealthTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                    guard !Task.isCancelled, let self else { return }
+                    self.verifyFunctionKeyMonitor()
+                }
+            }
+        }
+    }
+
+    private func stopMonitorHealthChecks() {
+        monitorHealthTask?.cancel()
+        monitorHealthTask = nil
+    }
+
+    private func unregisterShortcut() {
+        stopMonitorHealthChecks()
+        systemRegistration.unregisterShortcut()
+        functionKeyPress = FunctionKeyPress()
+    }
+
+    private func handleFunctionKeyInput(_ event: FunctionKeyInput, timestamp: TimeInterval, registrationID: UUID) {
+        guard case .functionKey(_, let activeID) = systemRegistration.active,
               activeID == registrationID else { return }
-        handleHotkeyEdge(isDown: isDown)
+        if case .monitorDisabled = event {
+            loseFunctionKeyMonitor(
+                input.inputMonitoringAllowed(prompt: false) ? .monitorUnavailable : .inputMonitoringPermissionRequired
+            )
+            return
+        }
+        guard acceptsInput(at: timestamp) else { return }
+        switch functionKeyPress.consume(event) {
+        case .pressed: handleHotkeyEdge(isDown: true, timestamp: timestamp)
+        case .released: handleHotkeyEdge(isDown: false, timestamp: timestamp)
+        case .cancelled: cancelActivePress()
+        case nil: break
+        }
     }
 
-    func handleHotkeyEdge(isDown: Bool) {
-        guard !isShutDown, isDown != hotkeyIsDown else { return }
+    func verifyFunctionKeyMonitor() {
+        guard case .functionKey(let monitor, _) = systemRegistration.active else { return }
+        if !input.inputMonitoringAllowed(prompt: false) {
+            loseFunctionKeyMonitor(.inputMonitoringPermissionRequired)
+        } else if !monitor.isEnabled {
+            loseFunctionKeyMonitor(.monitorUnavailable)
+        }
+    }
+
+    private func loseFunctionKeyMonitor(_ error: HotkeyRegistrationError) {
+        cancelActivePress()
+        unregisterShortcut()
+        recordRegistrationError(error, registrationChanged: true)
+        scheduleRegistrationRetry()
+    }
+
+    func setShortcutRecording(_ isRecording: Bool) {
+        guard isRecording != isRecordingShortcut else { return }
+        isRecordingShortcut = isRecording
+        discardInput()
+    }
+
+    private func acceptsInput(at timestamp: TimeInterval?) -> Bool {
+        guard !isShutDown, !isRecordingShortcut else { return false }
+        if let timestamp, let ignorePressesBefore, timestamp < ignorePressesBefore { return false }
+        return true
+    }
+
+    func handleHotkeyEdge(isDown: Bool, timestamp: TimeInterval? = nil) {
+        guard acceptsInput(at: timestamp), isDown != hotkeyIsDown else { return }
         hotkeyIsDown = isDown
         if isDown {
-            onHotkeyDown?()
+            pressWatchdog = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                    guard !Task.isCancelled, let self else { return }
+                    self.verifyPressedKey()
+                }
+            }
+            onHotkeyDown?(timestamp)
         } else {
-            onHotkeyUp?()
+            stopPressWatchdog()
+            onHotkeyUp?(timestamp)
         }
     }
 
-    private func observeWake() {
-        wakeObserver = NotificationObservation(
-            center: NSWorkspace.shared.notificationCenter,
-            name: NSWorkspace.didWakeNotification,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleWake()
+    func verifyPressedKey() {
+        guard hotkeyIsDown else { return }
+        verifyFunctionKeyMonitor()
+        if hotkeyIsDown, !input.isPressed(currentShortcut) {
+            discardInput()
+        }
+    }
+
+    private func stopPressWatchdog() {
+        pressWatchdog?.cancel()
+        pressWatchdog = nil
+    }
+
+    private func observeWorkspace() {
+        let names = [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification
+        ]
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservations = names.map { name in
+            NotificationObservation(center: center, name: name, queue: .main) { [weak self] _ in
+                guard Thread.isMainThread else { return }
+                MainActor.assumeIsolated {
+                    if name == NSWorkspace.didWakeNotification {
+                        self?.handleWake()
+                    } else {
+                        self?.discardInput()
+                    }
+                }
             }
         }
     }
 
     func handleWake() {
         guard !isShutDown else { return }
-        cancelActivePress()
+        discardInput()
         guard currentShortcut.isFn else { return }
         let wasActive = hasActiveRegistration
-        systemRegistration.unregisterShortcut()
+        unregisterShortcut()
         switch makeRegistration(for: currentShortcut, promptForPermission: false) {
         case .success(let registration):
-            systemRegistration.active = registration
+            activate(registration)
             recordRegistrationSuccess(registrationChanged: !wasActive)
         case .failure(let error):
             recordRegistrationError(error, registrationChanged: wasActive)
@@ -443,7 +540,14 @@ final class HotkeyManager {
         }
     }
 
+    private func discardInput() {
+        ignorePressesBefore = ProcessInfo.processInfo.systemUptime
+        functionKeyPress = FunctionKeyPress()
+        cancelActivePress()
+    }
+
     private func cancelActivePress() {
+        stopPressWatchdog()
         guard hotkeyIsDown else { return }
         hotkeyIsDown = false
         onHotkeyCancelled?()
@@ -503,17 +607,12 @@ final class HotkeyManager {
         }
         switch makeRegistration(for: currentShortcut, promptForPermission: false) {
         case .success(let registration):
-            systemRegistration.active = registration
+            activate(registration)
             recordRegistrationSuccess(registrationChanged: true)
         case .failure(let error):
             recordRegistrationError(error)
             scheduleRegistrationRetry()
         }
-    }
-
-    static func hasAccessibilityPermission(prompt: Bool) -> Bool {
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        return AXIsProcessTrustedWithOptions([promptKey: prompt] as CFDictionary)
     }
 
     private static func loadShortcut(from defaults: UserDefaults) -> KeyboardShortcut? {

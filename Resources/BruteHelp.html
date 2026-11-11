@@ -5,7 +5,7 @@
 </style></head><body><main>
 <h1>Using Brute</h1>
 <p>For macOS 13 or later. This guide is bundled with Brute and works offline.</p>
-<p>Brute lives in your Mac’s menu bar. Click its microphone icon to see the microphone state, shortcut status, and settings. Launching Brute leaves your existing microphone state unchanged.</p>
+<p>Brute lives in your Mac’s menu bar. Click its microphone icon to see the microphone state, shortcut status, and settings. On launch, Brute reads the current microphone state and may finish a pending change or restore an interrupted hold.</p>
 <p>Choose <strong>Brute Help…</strong> from the menu to open this guide. The menu also offers <strong>Preferences…</strong>, <strong>About Brute</strong>, and <strong>Quit Brute</strong>; microphone changes use the shortcut.</p>
 <h2>Tap or hold</h2>
 <p>The default shortcut is <strong>Option–Command–M (⌥⌘M)</strong>.</p>
@@ -22,14 +22,14 @@
 <h2>Which microphone is controlled?</h2>
 <p>Brute controls your Mac’s <strong>default input device</strong>. Apps using that microphone share its mute state. An app that explicitly selects a different microphone is unaffected.</p>
 <p>For example, if your default input is a USB microphone but a calling app uses your Mac’s built-in microphone, muting the USB microphone will not mute that call. Select the same microphone in your Mac’s sound settings and the calling app.</p>
-<p>If you change the default microphone while muted, Brute carries the mute state to the new default device.</p>
+<p>Changing the default microphone ends an active hold and restores the original device. Outside a hold, Brute carries an active mute to the new default device.</p>
 <h2>Preferences</h2>
-<p>Open <strong>Preferences…</strong> from the menu to change the shortcut or enable <strong>Launch at Login</strong>. To change the shortcut, click its button and press a key combination with a modifier, or press <strong>fn</strong> alone. The standalone fn shortcut requires Accessibility access in System Settings → Privacy &amp; Security → Accessibility. Preferences reports shortcut registration or Launch at Login errors.</p>
+<p>Open <strong>Preferences…</strong> from the menu to change the shortcut or enable <strong>Launch at Login</strong>. To change the shortcut, click its button and press a key combination with a modifier, or press <strong>fn</strong> alone. The standalone Fn shortcut requires permission in System Settings → Privacy &amp; Security → Input Monitoring. Preferences reports shortcut registration or Launch at Login errors.</p>
 <h2>Check the state</h2>
 <p>The menu bar icon is red when muted and green when unmuted. To use a monochrome icon that follows the system appearance, turn off <strong>Use Colored Icon</strong> in Preferences.</p>
 <p>The menu reports whether the microphone is <strong>Muted</strong> or <strong>Unmuted</strong>. It also explains when Brute cannot verify or change the state. If no input device is available, check that your microphone is connected and selected as the default input.</p>
 <p>If the shortcut does not respond, check the menu’s <strong>Hotkey</strong> status and any error in Preferences. If your calling app still hears audio while Brute reports Muted, check which microphone that app uses.</p>
 <p>If macOS asks for microphone access, review Brute’s permission in System Settings → Privacy &amp; Security → Microphone. Brute does not open an audio recording stream.</p>
 <p>Install Brute in Applications before enabling Launch at Login so its location stays stable.</p>
-<p>Brute does not record or transmit audio. Use <strong>Quit Brute</strong> in the menu to exit.</p>
+<p>Brute does not record or transmit audio. Read the bundled <a href="BrutePrivacy.html">privacy policy</a> for details. Use <strong>Quit Brute</strong> in the menu to exit.</p>
 </main></body></html>

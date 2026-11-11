@@ -11,6 +11,7 @@ import Foundation
 protocol AudioDeviceControlling: AnyObject {
     func defaultInputDeviceID() -> AudioDeviceID?
     func persistentIdentifier(for deviceID: AudioDeviceID) -> String?
+    func deviceID(forPersistentIdentifier identifier: String) -> AudioDeviceID?
     func hasMuteProperty(on deviceID: AudioDeviceID) -> Bool
     func isMuteSettable(on deviceID: AudioDeviceID) -> Bool
     func readMute(on deviceID: AudioDeviceID) -> Bool?
@@ -136,6 +137,25 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
         return identifier.takeRetainedValue() as String
     }
 
+    func deviceID(forPersistentIdentifier identifier: String) -> AudioDeviceID? {
+        let uid = identifier as CFString
+        var qualifier = Unmanaged.passUnretained(uid)
+        var deviceID = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let status = withExtendedLifetime(uid) {
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address,
+                UInt32(MemoryLayout.size(ofValue: qualifier)), &qualifier, &size, &deviceID
+            )
+        }
+        return status == noErr && deviceID != kAudioObjectUnknown ? deviceID : nil
+    }
+
     // MARK: - Mute
 
     func hasMuteProperty(on deviceID: AudioDeviceID) -> Bool {
@@ -147,7 +167,7 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
     }
 
     func readMute(on deviceID: AudioDeviceID) -> Bool? {
-        let values = readableControlAddresses(selector: kAudioDevicePropertyMute, on: deviceID).map { address -> Bool? in
+        let values = stateReadAddresses(selector: kAudioDevicePropertyMute, on: deviceID).map { address -> Bool? in
             var address = address
             var value: UInt32 = 0
             var size = UInt32(MemoryLayout<UInt32>.size)
@@ -204,7 +224,7 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
     }
 
     func readVolumes(on deviceID: AudioDeviceID) -> InputVolumeSnapshot? {
-        let addresses = readableControlAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
+        let addresses = stateReadAddresses(selector: kAudioDevicePropertyVolumeScalar, on: deviceID)
         guard !addresses.isEmpty else { return nil }
         var result: InputVolumeSnapshot = [:]
         for originalAddress in addresses {
@@ -401,6 +421,16 @@ final class CoreAudioDeviceController: AudioDeviceControlling {
         on deviceID: AudioDeviceID
     ) -> [AudioObjectPropertyAddress] {
         inventory(on: deviceID).controls[selector]?.readable ?? []
+    }
+
+    /// Read the same complete set of channels used by a write. A read-only
+    /// aggregate cannot supply prior values or readback for individual writes.
+    private func stateReadAddresses(
+        selector: AudioObjectPropertySelector,
+        on deviceID: AudioDeviceID
+    ) -> [AudioObjectPropertyAddress] {
+        guard let addresses = inventory(on: deviceID).controls[selector] else { return [] }
+        return addresses.writable.isEmpty ? addresses.readable : addresses.writable
     }
 
     private func writableControlAddresses(

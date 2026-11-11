@@ -14,8 +14,8 @@ final class MicrophoneActionController {
     private enum Gesture {
         case idle
         case pressed(TimeInterval)
-        case held(priorMuted: Bool)
-        case failed
+        case held(MicMuteController.TemporaryMute)
+        case consumed
     }
 
     private let micController: MicMuteController
@@ -63,10 +63,11 @@ final class MicrophoneActionController {
         self.defaults = defaults
         let saved = defaults?.object(forKey: Self.delayKey) as? Double
         holdThreshold = Self.validatedDelay(saved ?? Self.defaultDelay)
-        hotkeyManager?.onHotkeyDown = { [weak self] in self?.handleDown() }
-        hotkeyManager?.onHotkeyUp = { [weak self] in self?.handleUp() }
+        hotkeyManager?.onHotkeyDown = { [weak self] timestamp in self?.handleDown(at: timestamp) }
+        hotkeyManager?.onHotkeyUp = { [weak self] timestamp in self?.handleUp(at: timestamp) }
         hotkeyManager?.onHotkeyCancelled = { [weak self] in self?.cancelActiveGesture() }
-        if observesWake {
+        // HotkeyManager resets its own edges and cancels the gesture together.
+        if observesWake, hotkeyManager == nil {
             observeWake()
         }
     }
@@ -88,11 +89,14 @@ final class MicrophoneActionController {
         return (min(maximumDelay, max(minimumDelay, delay)) * 5).rounded() / 5
     }
 
-    func handleDown() {
+    func handleDown(at timestamp: TimeInterval? = nil) {
         guard case .idle = gesture else { return }
-        gesture = .pressed(now() + holdThreshold)
+        let currentTime = now()
+        let pressedAt = eventTime(timestamp, noLaterThan: currentTime)
+        let holdDeadline = pressedAt + holdThreshold
+        gesture = .pressed(holdDeadline)
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(holdThreshold))
+        let deadline = clock.now.advanced(by: .seconds(max(0, holdDeadline - currentTime)))
         holdTask = Task { @MainActor [weak self] in
             do {
                 try await clock.sleep(until: deadline)
@@ -105,15 +109,20 @@ final class MicrophoneActionController {
     }
 
     /// The scheduled hold check and release both validate the original deadline.
-    func advanceHold() {
+    func advanceHold(at timestamp: TimeInterval? = nil) {
         guard case .pressed(let deadline) = gesture,
-              now() >= deadline else { return }
+              eventTime(timestamp, noLaterThan: now()) >= deadline else { return }
         cancelHoldTask()
-        applyFlip(temporary: true)
+        guard let temporary = micController.beginTemporaryToggle() else {
+            gesture = .consumed
+            return
+        }
+        gesture = .held(temporary)
+        feedback?.play()
     }
 
-    func handleUp() {
-        advanceHold()
+    func handleUp(at timestamp: TimeInterval? = nil) {
+        advanceHold(at: timestamp)
         finishGesture(commitTap: true)
     }
 
@@ -126,33 +135,21 @@ final class MicrophoneActionController {
 
     private func finishGesture(commitTap: Bool) {
         cancelHoldTask()
-        switch gesture {
+        let finished = gesture
+        gesture = .idle
+        switch finished {
         case .pressed:
-            if commitTap { applyFlip(temporary: false) }
-        case .held(let prior):
-            writeMuted(prior, retryOnFailure: true)
-        case .idle, .failed:
+            if commitTap, micController.toggleMute() { feedback?.play() }
+        case .held(let temporary):
+            if micController.endTemporaryToggle(temporary) { feedback?.play() }
+        case .idle, .consumed:
             break
         }
-        gesture = .idle
     }
 
-    private func applyFlip(temporary: Bool) {
-        micController.syncBeforeGesture()
-        guard let prior = micController.state.mutedValue else {
-            gesture = .failed
-            return
-        }
-        // Restore even if a hardware write was accepted but readback is deferred.
-        gesture = temporary ? .held(priorMuted: prior) : .idle
-        writeMuted(!prior)
-    }
-
-    /// All hotkey writes, including restoration, pass through this one boundary.
-    private func writeMuted(_ muted: Bool, retryOnFailure: Bool = false) {
-        if micController.setMuted(muted, retryOnFailure: retryOnFailure) {
-            feedback?.play()
-        }
+    private func eventTime(_ timestamp: TimeInterval?, noLaterThan currentTime: TimeInterval) -> TimeInterval {
+        guard let timestamp, timestamp.isFinite, timestamp > 0 else { return currentTime }
+        return min(timestamp, currentTime)
     }
 
     private func cancelHoldTask() {

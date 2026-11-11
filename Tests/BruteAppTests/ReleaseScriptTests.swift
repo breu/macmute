@@ -158,11 +158,18 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertEqual(result.status, 0, result.output)
         XCTAssertTrue(fixture.appURL.exists)
         XCTAssertTrue(fixture.dmgURL.exists)
-        XCTAssertEqual(
-            try Data(contentsOf: fixture.appURL.appendingPathComponent("Contents/Resources/BruteHelp.html")),
-            try Data(contentsOf: fixture.root.appendingPathComponent("Resources/BruteHelp.html"))
-        )
+        for resource in ["BruteHelp.html", "BrutePrivacy.html"] {
+            XCTAssertEqual(
+                try Data(contentsOf: fixture.appURL.appendingPathComponent("Contents/Resources/\(resource)")),
+                try Data(contentsOf: fixture.root.appendingPathComponent("Resources/\(resource)"))
+            )
+        }
         let log = try String(contentsOf: fixture.logURL, encoding: .utf8)
+        XCTAssertTrue(log.contains("git clone --quiet --shared --no-checkout --template="))
+        XCTAssertTrue(log.contains("git archive --format=tar \(ReleaseFixture.sourceRevision)"))
+        let swiftDirectories = log.split(separator: "\n").filter { $0.hasPrefix("swift cwd: ") }
+        XCTAssertFalse(swiftDirectories.isEmpty)
+        XCTAssertTrue(swiftDirectories.allSatisfy { $0.hasSuffix("/source") })
         XCTAssertTrue(log.contains("swift test"))
         XCTAssertTrue(log.contains("--enable-code-coverage"))
         XCTAssertTrue(log.contains("Scripts/check_coverage.swift"))
@@ -182,7 +189,7 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(log.components(separatedBy: "hdiutil verify").count - 1, 2)
         let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
         XCTAssertEqual(plist?["BruteSourceRevision"] as? String, ReleaseFixture.sourceRevision)
-        XCTAssertEqual(plist?["CFBundleShortVersionString"] as? String, "1.3")
+        XCTAssertEqual(plist?["CFBundleShortVersionString"] as? String, ReleaseFixture.marketingVersion)
         XCTAssertEqual(plist?["CFBundleVersion"] as? String, "14.2")
     }
 
@@ -197,6 +204,34 @@ final class ReleaseScriptTests: XCTestCase {
 
         XCTAssertNotEqual(result.status, 0)
         XCTAssertTrue(result.output.contains("pristine tracked and untracked release inputs"))
+    }
+
+    func testReleaseRejectsAnUntrackedVersionSpecificManifest() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        let alternate = fixture.root.appendingPathComponent("Package@swift-6.swift")
+        try Data("// swift-tools-version:6.0\n".utf8).write(to: alternate)
+
+        let result = try fixture.run("Scripts/build_app.sh")
+
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.output.contains("pristine tracked and untracked release inputs"))
+        XCTAssertFalse(fixture.appURL.exists)
+    }
+
+    func testLegacyMarketingVersionIsOnlyAllowedForDevelopment() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        try fixture.writeVersion(marketing: "1.3")
+
+        let release = try fixture.run("Scripts/build_app.sh")
+        XCTAssertNotEqual(release.status, 0)
+        XCTAssertTrue(release.output.contains("use three components for the release marketing version"))
+
+        let development = try fixture.run("Scripts/build_app.sh", extraEnvironment: ["BRUTE_RELEASE": "0"])
+        XCTAssertEqual(development.status, 0, development.output)
+        let plist = NSDictionary(contentsOf: fixture.appURL.appendingPathComponent("Contents/Info.plist"))
+        XCTAssertEqual(plist?["CFBundleShortVersionString"] as? String, "1.3")
     }
 
     func testReleaseRequiresPinnedTeamIdentifierFileToBeCommitted() throws {
@@ -271,6 +306,19 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: fixture.dmgURL, encoding: .utf8), "previous-dmg")
     }
 
+    func testInstallerMustContainTheAppFromTheStagedRevision() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        try fixture.installPreviousArtifacts()
+
+        let result = try fixture.run("Scripts/build_dmg.sh", extraEnvironment: ["FAKE_FAIL_TOOL": "mounted-revision"])
+
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.output.contains("installer app revision does not match the staged app"))
+        XCTAssertEqual(try fixture.appMarker(), "previous-app")
+        XCTAssertEqual(try String(contentsOf: fixture.dmgURL, encoding: .utf8), "previous-dmg")
+    }
+
     func testEveryReleaseGateFailurePreservesPreviousArtifacts() throws {
         for failingTool in ["swift-test", "coverage", "swift-build", "codesign", "spctl", "stapler"] {
             let fixture = try ReleaseFixture()
@@ -305,6 +353,52 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertNotEqual(result.status, 0)
         XCTAssertEqual(try fixture.appMarker(), "previous-app")
         XCTAssertEqual(try String(contentsOf: fixture.dmgURL, encoding: .utf8), "previous-dmg")
+    }
+
+    func testPartialAppPublicationRestoresPreviousBundle() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        try fixture.installPreviousArtifacts()
+
+        let result = try fixture.run("Scripts/build_app.sh", extraEnvironment: ["FAKE_FAIL_TOOL": "publish-app"])
+
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertEqual(try fixture.appMarker(), "previous-app")
+    }
+
+    func testFailedRollbackKeepsBackupAndRestoresOtherArtifact() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        try fixture.installPreviousArtifacts()
+
+        let result = try fixture.run("Scripts/build_dmg.sh", extraEnvironment: ["FAKE_FAIL_TOOL": "rollback-dmg"])
+
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.output.contains("backup retained"))
+        XCTAssertEqual(try fixture.appMarker(), "previous-app")
+        let retained = try FileManager.default.contentsOfDirectory(at: fixture.root, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("brute-dmg-build.") }
+        let staging = try XCTUnwrap(retained.first)
+        XCTAssertEqual(retained.count, 1)
+        let backup = staging.appendingPathComponent("previous").appendingPathComponent(fixture.dmgURL.lastPathComponent)
+        XCTAssertEqual(try String(contentsOf: backup, encoding: .utf8), "previous-dmg")
+    }
+
+    func testAppAndDMGBuildersHonorTheSamePublicationLock() throws {
+        let fixture = try ReleaseFixture()
+        defer { fixture.remove() }
+        try fixture.installPreviousArtifacts()
+        let lock = fixture.root.appendingPathComponent("brute-app-build.Brute.app.lock")
+        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+
+        for script in ["build_app.sh", "build_dmg.sh"] {
+            let result = try fixture.run("Scripts/\(script)")
+            XCTAssertNotEqual(result.status, 0)
+            XCTAssertTrue(result.output.contains("could not acquire publication lock"))
+            XCTAssertEqual(try fixture.appMarker(), "previous-app")
+            XCTAssertEqual(try String(contentsOf: fixture.dmgURL, encoding: .utf8), "previous-dmg")
+            XCTAssertTrue(lock.exists)
+        }
     }
 
     private func runRepositoryScript(
@@ -363,12 +457,13 @@ final class ReleaseScriptTests: XCTestCase {
 private final class ReleaseFixture {
     static let teamID = "ABCDE12345"
     static let sourceRevision = String(repeating: "a", count: 40)
+    static let marketingVersion = "1.3.0"
 
     let root: URL
     let binURL: URL
     let logURL: URL
     var appURL: URL { root.appendingPathComponent("Brute.app") }
-    var dmgURL: URL { root.appendingPathComponent("Brute-1.3.dmg") }
+    var dmgURL: URL { root.appendingPathComponent("Brute-\(Self.marketingVersion).dmg") }
 
     init() throws {
         root = FileManager.default.temporaryDirectory
@@ -381,26 +476,28 @@ private final class ReleaseFixture {
 
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        for script in ["build_app.sh", "build_dmg.sh", "check_release.sh", "check_coverage.swift"] {
+        for script in ["artifact_publication.sh", "build_app.sh", "build_dmg.sh", "check_release.sh", "check_coverage.swift"] {
             try FileManager.default.copyItem(
                 at: repositoryRoot.appendingPathComponent("Scripts/\(script)"),
                 to: root.appendingPathComponent("Scripts/\(script)")
             )
         }
-        try FileManager.default.copyItem(
-            at: repositoryRoot.appendingPathComponent("Resources/BruteHelp.html"),
-            to: root.appendingPathComponent("Resources/BruteHelp.html")
-        )
+        for resource in ["BruteHelp.html", "BrutePrivacy.html", "Info.plist"] {
+            try FileManager.default.copyItem(
+                at: repositoryRoot.appendingPathComponent("Resources/\(resource)"),
+                to: root.appendingPathComponent("Resources/\(resource)")
+            )
+        }
         try Data(Self.teamID.utf8).write(to: root.appendingPathComponent("Resources/BreuSoftwareTeamID.txt"))
         try Data("icon".utf8).write(to: root.appendingPathComponent("Resources/RaptorIcon.png"))
-        try FileManager.default.copyItem(
-            at: repositoryRoot.appendingPathComponent("Resources/Info.plist"),
-            to: root.appendingPathComponent("Resources/Info.plist")
-        )
-        try Data("MARKETING_VERSION = 1.3\nCURRENT_PROJECT_VERSION = 14.2\n".utf8).write(
+        try writeVersion(marketing: Self.marketingVersion)
+        try installFakeTools()
+    }
+
+    func writeVersion(marketing: String) throws {
+        try Data("MARKETING_VERSION = \(marketing)\nCURRENT_PROJECT_VERSION = 14.2\n".utf8).write(
             to: root.appendingPathComponent("Resources/Version.xcconfig")
         )
-        try installFakeTools()
     }
 
     func run(
@@ -415,6 +512,8 @@ private final class ReleaseFixture {
         environment["FAKE_SECURITY_IDENTITY"] = environment["BRUTE_SIGNING_IDENTITY"]
         environment["FAKE_SIGNED_TEAM_ID"] = Self.teamID
         environment["FAKE_SOURCE_REVISION"] = Self.sourceRevision
+        environment["FAKE_PUBLICATION_ROOT"] = root.path
+        environment["FAKE_DMG_NAME"] = dmgURL.lastPathComponent
         environment["FAKE_TOOL_LOG"] = logURL.path
         environment["FAKE_FAIL_TOOL"] = ""
         environment["FAKE_GIT_STATUS"] = ""
@@ -455,13 +554,37 @@ private final class ReleaseFixture {
         printf '1) ABCDEF "%s"\n' "$FAKE_SECURITY_IDENTITY"
         """)
         try writeTool("git", body: """
+        if [ "$1" = "clone" ]; then
+          echo "git $*" >> "$FAKE_TOOL_LOG"
+          for destination do :; done
+          exec mkdir "$destination"
+        fi
+        if [ "$1" = "-C" ]; then
+          [ -d "$2" ] && [ "$3" = "-c" ] && [ "$4" = "core.attributesFile=/dev/null" ] || exit 1
+          [ "$GIT_ATTR_NOSYSTEM" = "1" ] || exit 1
+          shift 4
+        fi
         if [ "$1" = "rev-parse" ]; then echo "$FAKE_SOURCE_REVISION"; exit 0; fi
-        if [ "$1" = "status" ]; then printf '%s' "$FAKE_GIT_STATUS"; exit 0; fi
-        if [ "$1" = "ls-files" ]; then [ "$FAKE_TEAM_UNTRACKED" = "1" ] && exit 1; exit 0; fi
-        exit 0
+        if [ "$1" = "status" ]; then
+          printf '%s' "$FAKE_GIT_STATUS"
+          for input do
+            if [ "$input" = ':(glob)Package@swift-*.swift' ] && [ -f 'Package@swift-6.swift' ]; then
+              printf '?? Package@swift-6.swift\\n'
+            fi
+          done
+          exit 0
+        fi
+        if [ "$1" = "cat-file" ]; then [ "$FAKE_TEAM_UNTRACKED" = "1" ] && exit 1; exit 0; fi
+        if [ "$1" = "archive" ]; then
+          echo "git $*" >> "$FAKE_TOOL_LOG"
+          [ "$3" = "$FAKE_SOURCE_REVISION" ] || exit 1
+          exec tar -cf - Scripts Resources
+        fi
+        exit 1
         """)
         try writeTool("swift", body: """
         echo "swift $*" >> "$FAKE_TOOL_LOG"
+        echo "swift cwd: $PWD" >> "$FAKE_TOOL_LOG"
         if [ "$1" = "test" ] && [ "$2" = "--show-codecov-path" ]; then
           echo .build/fake-codecov.json
         fi
@@ -524,7 +647,10 @@ private final class ReleaseFixture {
             if [ "$1" = "-mountpoint" ]; then shift; mountpoint="$1"; else image="$1"; fi
             shift
           done
-          cp -R "$image.contents/." "$mountpoint/"
+          cp -R "$image.contents/." "$mountpoint/" || exit $?
+          if [ "$FAKE_FAIL_TOOL" = "mounted-revision" ]; then
+            /usr/libexec/PlistBuddy -c 'Set :BruteSourceRevision wrong-revision' "$mountpoint/Brute.app/Contents/Info.plist"
+          fi
           exit $?
         fi
         if [ "$1" = "detach" ]; then
@@ -551,10 +677,30 @@ private final class ReleaseFixture {
         exit 0
         """)
         try writeTool("mv", body: """
-        if [ "$FAKE_FAIL_TOOL" = "publish-dmg" ] && [ "$2" = "Brute-1.3.dmg" ]; then
-          case "$1" in *brute-dmg-build.*/Brute-1.3.dmg) exit 9 ;; esac
+        if [ "$1" = "--" ]; then shift; fi
+        destination_parent=$(dirname "$2")
+        destination_name=$(basename "$2")
+        if [ "$FAKE_FAIL_TOOL" = "publish-app" ] && [ "$destination_name" = "Brute.app" ] &&
+           [ "$destination_parent" -ef "$FAKE_PUBLICATION_ROOT" ]; then
+          case "$1" in
+            */previous/*) ;;
+            *brute-app-build.*/Brute.app) mkdir -p "$2"; exit 9 ;;
+          esac
         fi
-        exec /bin/mv "$@"
+        if [ "$destination_name" = "$FAKE_DMG_NAME" ] && [ "$destination_parent" -ef "$FAKE_PUBLICATION_ROOT" ]; then
+          case "$1" in
+            */previous/*)
+              [ "$FAKE_FAIL_TOOL" = "rollback-dmg" ] && exit 9
+              ;;
+            *brute-dmg-build.*/"$FAKE_DMG_NAME")
+              if [ "$FAKE_FAIL_TOOL" = "publish-dmg" ] || [ "$FAKE_FAIL_TOOL" = "rollback-dmg" ]; then
+                printf partial-dmg > "$2"
+                exit 9
+              fi
+              ;;
+          esac
+        fi
+        exec /bin/mv -- "$@"
         """)
     }
 

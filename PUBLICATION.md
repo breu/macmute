@@ -19,17 +19,18 @@ No separate backlog file exists in this repository. Completed work is recorded h
 
 ## Verified locally in this cut
 
-- The shared release gate passed 127 tests with 55.26% overall line coverage. All critical-file floors passed, including click feedback at 49.09%.
-- The strict SwiftPM release build and ShellCheck passed. Xcode built the Release app with sandbox and audio input entitlements, and all 127 tests passed in its test host.
-- An ad-hoc shell build produced and verified Apple Silicon and Intel slices. The shell and Xcode bundles reported version and build 1.3.
+- The shared release gate passed 154 tests with 65.18% overall line coverage. All critical-file floors passed.
+- ShellCheck and all 154 Xcode tests passed. The hosted tests use simulated inputs.
+- Xcode locally exported Brute 1.3.0 (1.3.1) for the Mac App Store with Breu Software LLC signing. The installer and embedded app signatures verified. The embedded app has Apple Silicon and Intel slices, App Sandbox and audio input entitlements, and the bundled help and privacy policy.
+- The development DMG built, mounted, and verified its app and source revision.
 
 These are development checks. Repeat the applicable checks against the final distribution build.
 
 ## Before either distribution route
 
-- [ ] Run `bash Scripts/check_release.sh` against the final source.
+- [x] Run `bash Scripts/check_release.sh` against this candidate.
 - [ ] Test taps in both starting states and holds at every delay stop; release must restore the prior state.
-- [ ] Verify shortcut registration, shortcut changes, and standalone fn permission behavior.
+- [ ] Verify shortcut registration and changes. Test standalone Fn with Input Monitoring granted and revoked, including release while another app is focused.
 - [ ] Verify state icons/menu text against live microphone behavior, including unavailable and reconnect states.
 - [ ] Verify default-device switching while muted, sleep/wake, feedback sound, and Launch at Login.
 - [ ] Check menu legibility in light and dark appearances, VoiceOver navigation, slider interaction, Preferences/About/Quit actions, and offline Help from the installed app.
@@ -37,12 +38,13 @@ These are development checks. Repeat the applicable checks against the final dis
 
 ## App Store route
 
-- [ ] Archive the Release app with the intended App Store signing configuration.
-- [ ] Inspect the archive’s signed entitlements for sandbox and audio input access.
+- [x] Archive and locally export the Release app with App Store signing.
+- [x] Inspect the exported app’s signed entitlements for sandbox and audio input access.
 - [ ] Repeat live feature checks in the signed sandboxed build; unsandboxed shell builds and fake-hardware tests do not cover this gate.
 - [ ] Validate and upload in Organizer; confirm the app-category and sandbox validation issues are resolved.
 - [ ] Verify the App Store listing name and bundle identifier match the Brute build.
-- [ ] Refresh the App Store screenshots from the Brute build before submitting.
+- [ ] After pushing the policy, open the [public privacy policy](https://github.com/breusoftware/brute#privacy-policy) while signed out and enter that URL and the app privacy answers in App Store Connect.
+- [x] Refresh the App Store screenshots from the current Brute interface. Both captures are 1440 × 900 with no alpha channel.
 - [ ] Confirm Apple processing, metadata, and review status before describing the app as published.
 
 ## Direct-distribution route

@@ -57,6 +57,12 @@ final class FakeAudioDeviceController: AudioDeviceControlling {
         return persistentIdentifiers[deviceID] ?? "\(identifierPrefix)-\(deviceID)"
     }
 
+    func deviceID(forPersistentIdentifier identifier: String) -> AudioDeviceID? {
+        let known = Set(persistentIdentifiers.keys)
+            .union(mutes.keys).union(volumes.keys).union(volumeSnapshots.keys)
+        return known.first { persistentIdentifier(for: $0) == identifier }
+    }
+
     func hasMuteProperty(on deviceID: AudioDeviceID) -> Bool {
         muteProperties.contains(deviceID)
     }

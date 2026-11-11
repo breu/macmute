@@ -82,6 +82,7 @@ final class StatusBarController {
         hotkeyObserver = nil
         iconObservation = nil
         muteController.onStateChanged = nil
+        preferencesWindowController?.close()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -113,6 +114,10 @@ final class StatusBarController {
         let helpItem = NSMenuItem(title: BruteStrings.help, action: #selector(openHelp), keyEquivalent: "")
         helpItem.target = self
         menu.addItem(helpItem)
+
+        let privacyItem = NSMenuItem(title: BruteStrings.privacyPolicy, action: #selector(openPrivacyPolicy), keyEquivalent: "")
+        privacyItem.target = self
+        menu.addItem(privacyItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -229,11 +234,23 @@ final class StatusBarController {
     }
 
     @objc private func openHelp() {
-        guard let url = Bundle.main.url(forResource: "BruteHelp", withExtension: "html"),
+        openBundledDocument("BruteHelp", errorTitle: BruteStrings.helpUnavailableTitle, errorBody: BruteStrings.helpUnavailableBody)
+    }
+
+    @objc private func openPrivacyPolicy() {
+        openBundledDocument(
+            "BrutePrivacy",
+            errorTitle: BruteStrings.privacyPolicyUnavailableTitle,
+            errorBody: BruteStrings.privacyPolicyUnavailableBody
+        )
+    }
+
+    private func openBundledDocument(_ name: String, errorTitle: String, errorBody: String) {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "html"),
               NSWorkspace.shared.open(url) else {
             let alert = NSAlert()
-            alert.messageText = BruteStrings.helpUnavailableTitle
-            alert.informativeText = BruteStrings.helpUnavailableBody
+            alert.messageText = errorTitle
+            alert.informativeText = errorBody
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
             return

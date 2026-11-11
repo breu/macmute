@@ -3,6 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# shellcheck source=Scripts/artifact_publication.sh
+source Scripts/artifact_publication.sh
+
 APP_NAME="Brute"
 APP_BUNDLE="${APP_NAME}.app"
 RELEASE_BUILD="${BRUTE_RELEASE:-${MACMUTE_RELEASE:-0}}"
@@ -12,42 +15,27 @@ WORK_DIR=""
 STAGING_DIR=""
 TEMP_DMG=""
 TEMP_APP_BUNDLE=""
-BACKUP_DMG=""
-BACKUP_APP_BUNDLE=""
-APP_REPLACED=0
-DMG_REPLACED=0
-PUBLISHED=0
 MOUNT_DIR=""
 DMG_MOUNTED=0
 
 cleanup() {
+    local status=$? preserve_workspace=0
     if [[ "${DMG_MOUNTED}" == "1" && -n "${MOUNT_DIR}" ]]; then
-        hdiutil detach "${MOUNT_DIR}" >/dev/null 2>&1 || true
-        DMG_MOUNTED=0
-    fi
-    if [[ "${PUBLISHED}" != "1" ]]; then
-        if [[ "${APP_REPLACED}" == "1" && -e "${APP_BUNDLE}" ]]; then
-            rm -rf "${APP_BUNDLE}"
-        fi
-        if [[ ! -e "${APP_BUNDLE}" && -n "${BACKUP_APP_BUNDLE}" && -e "${BACKUP_APP_BUNDLE}" ]]; then
-            mv "${BACKUP_APP_BUNDLE}" "${APP_BUNDLE}"
-        fi
-        if [[ "${DMG_REPLACED}" == "1" && -n "${DMG_NAME:-}" && -e "${DMG_NAME}" ]]; then
-            rm -f "${DMG_NAME}"
-        fi
-        if [[ -n "${DMG_NAME:-}" && ! -e "${DMG_NAME}" && -n "${BACKUP_DMG}" && -e "${BACKUP_DMG}" ]]; then
-            mv "${BACKUP_DMG}" "${DMG_NAME}"
+        if ! hdiutil detach "${MOUNT_DIR}" >/dev/null; then
+            preserve_workspace=1
         fi
     fi
-    if [[ -n "${WORK_DIR}" && -d "${WORK_DIR}" ]]; then
-        rm -rf "${WORK_DIR}"
-    fi
+    publication_finish "${status}" "${preserve_workspace}"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 verify_installer_contents() {
     local image="$1"
     local assess_gatekeeper="${2:-0}"
+    local mounted_revision
     MOUNT_DIR="${WORK_DIR}/mounted"
     mkdir -p "${MOUNT_DIR}"
     hdiutil attach -readonly -nobrowse -mountpoint "${MOUNT_DIR}" "${image}" >/dev/null
@@ -66,8 +54,12 @@ verify_installer_contents() {
     fi
     lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch arm64
     lipo "${MOUNT_DIR}/${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" -verify_arch x86_64
-    /usr/libexec/PlistBuddy -c "Print :BruteSourceRevision" \
-      "${MOUNT_DIR}/${APP_BUNDLE}/Contents/Info.plist" >/dev/null
+    mounted_revision=$(/usr/libexec/PlistBuddy -c "Print :BruteSourceRevision" \
+      "${MOUNT_DIR}/${APP_BUNDLE}/Contents/Info.plist")
+    if [[ "${mounted_revision}" != "${APP_SOURCE_REVISION}" ]]; then
+        echo "error: installer app revision does not match the staged app" >&2
+        return 1
+    fi
     hdiutil detach "${MOUNT_DIR}" >/dev/null
     DMG_MOUNTED=0
     rmdir "${MOUNT_DIR}"
@@ -84,7 +76,8 @@ if [[ "${RELEASE_BUILD}" == "1" && -z "${NOTARY_PROFILE}" ]]; then
     exit 1
 fi
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/brute-dmg-build.XXXXXX")"
+publication_begin "${APP_BUNDLE}" brute-dmg-build
+WORK_DIR="${publication_workspace}"
 TEMP_APP_BUNDLE="${WORK_DIR}/${APP_BUNDLE}"
 STAGING_DIR="${WORK_DIR}/staging"
 
@@ -92,10 +85,9 @@ echo "==> Building verified temporary ${APP_BUNDLE}"
 BRUTE_APP_OUTPUT="${TEMP_APP_BUNDLE}" ./Scripts/build_app.sh
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${TEMP_APP_BUNDLE}/Contents/Info.plist")
+APP_SOURCE_REVISION=$(/usr/libexec/PlistBuddy -c "Print :BruteSourceRevision" "${TEMP_APP_BUNDLE}/Contents/Info.plist")
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 TEMP_DMG="${WORK_DIR}/${DMG_NAME}"
-BACKUP_DMG="${WORK_DIR}/${DMG_NAME}.previous"
-BACKUP_APP_BUNDLE="${WORK_DIR}/${APP_NAME}.previous.app"
 
 echo "==> Assembling installer image"
 mkdir -p "${STAGING_DIR}"
@@ -130,19 +122,9 @@ if [[ "${RELEASE_BUILD}" == "1" ]]; then
 fi
 
 echo "==> Publishing ${DMG_NAME}"
-if [[ -e "${APP_BUNDLE}" ]]; then
-    mv "${APP_BUNDLE}" "${BACKUP_APP_BUNDLE}"
-fi
-if [[ -e "${DMG_NAME}" ]]; then
-    mv "${DMG_NAME}" "${BACKUP_DMG}"
-fi
-mv "${TEMP_APP_BUNDLE}" "${APP_BUNDLE}"
-APP_REPLACED=1
-mv "${TEMP_DMG}" "${DMG_NAME}"
-DMG_REPLACED=1
-PUBLISHED=1
-rm -rf "${BACKUP_APP_BUNDLE}"
-rm -f "${BACKUP_DMG}"
+publish_artifact "${TEMP_APP_BUNDLE}" "${publication_app}"
+publish_artifact "${TEMP_DMG}" "${publication_directory}/${DMG_NAME}"
+publication_committed=1
 
 echo "==> Done: ${DMG_NAME}"
 echo "Open it and drag ${APP_BUNDLE} into Applications to install."

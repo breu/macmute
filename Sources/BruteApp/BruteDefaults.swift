@@ -11,6 +11,7 @@ import Foundation
 /// - `appMutedInputDevices` — the record that Brute, not the user, muted a device.
 /// - `pendingInputStates` — device changes and restores still awaiting confirmation.
 /// - `pendingInputVolumeRestorations` — the gain targets for active fallback restores.
+/// - `pendingDeviceRestorations` — temporary changes to undo on the original device.
 ///
 /// If Brute is killed or crashes while it owns a mute, the next launch reads these
 /// keys to recover ownership and finish pending restores. Deleting or renaming them orphans that record, and
@@ -27,6 +28,7 @@ enum BruteDefaults {
     static let appMutedInputDevices = "MacMute.appMutedInputDevices"
     static let pendingInputStates = "MacMute.pendingInputStates"
     static let pendingInputVolumeRestorations = "MacMute.pendingInputVolumeRestorations"
+    static let pendingDeviceRestorations = "MacMute.pendingDeviceRestorations"
     static let shortcut = "MacMute.shortcut"
     static let tapHoldDelay = "MacMute.tapHoldDelay"
     static let useColoredIcon = "MacMute.useColoredIcon"

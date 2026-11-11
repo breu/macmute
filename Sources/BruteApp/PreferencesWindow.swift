@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let model: PreferencesModel
-    let recorder = ShortcutRecorder()
+    let recorder: ShortcutRecorder
 
     init(
         hotkeyManager: HotkeyManager,
@@ -13,6 +13,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         iconPreferences: IconPreferences
     ) {
         model = PreferencesModel(launchManager: launchManager, hotkeyManager: hotkeyManager)
+        recorder = ShortcutRecorder { [weak hotkeyManager] isRecording in
+            hotkeyManager?.setShortcutRecording(isRecording)
+        }
         let view = PreferencesView(model: model, iconPreferences: iconPreferences, recorder: recorder)
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
@@ -21,6 +24,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window.setContentSize(NSSize(width: 360, height: 276))
         super.init(window: window)
         window.delegate = self
+        recorder.window = window
     }
 
     required init?(coder: NSCoder) {
@@ -35,6 +39,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        recorder.cancel()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
         recorder.cancel()
     }
 }
@@ -179,20 +187,31 @@ final class PreferencesModel: ObservableObject {
 /// within the app and converts it into a `KeyboardShortcut`.
 @MainActor
 final class ShortcutRecorder: ObservableObject {
-    @Published private(set) var isRecording = false
+    @Published private(set) var isRecording = false {
+        didSet { recordingChanged(isRecording) }
+    }
 
+    weak var window: NSWindow?
+    private let recordingChanged: (Bool) -> Void
     private var keyMonitor: Any?
     private var flagsMonitor: Any?
-    private var fnKeyIsDown = false
+    private var functionKeyPress = FunctionKeyPress()
+
+    init(recordingChanged: @escaping (Bool) -> Void = { _ in }) {
+        self.recordingChanged = recordingChanged
+    }
 
     func record(completion: @escaping (KeyboardShortcut) -> Void) {
         cancel()
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self, self.accepts(event) else { return event }
             if event.keyCode == UInt16(kVK_Escape) {
-                self?.cancel()
+                self.cancel()
                 return nil
             }
+            let wasFnChord = self.functionKeyPress.consume(.otherKeyDown) == .cancelled
+            guard !wasFnChord, !event.modifierFlags.contains(.function) else { return event }
             var carbonModifiers: UInt32 = 0
             if event.modifierFlags.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
             if event.modifierFlags.contains(.option) { carbonModifiers |= UInt32(optionKey) }
@@ -205,17 +224,21 @@ final class ShortcutRecorder: ObservableObject {
             }
 
             let shortcut = KeyboardShortcut(keyCode: keyCode, modifiers: carbonModifiers)
-            self?.finish(with: shortcut, completion: completion)
+            self.finish(with: shortcut, completion: completion)
             return nil
         }
 
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            guard let self else { return event }
-            let isFnDown = event.modifierFlags.contains(.function)
-            if isFnDown && !self.fnKeyIsDown {
+            guard let self, self.accepts(event) else { return event }
+            let flags = event.modifierFlags
+            let edge = self.functionKeyPress.consume(.flagsChanged(
+                isFunctionKey: event.keyCode == UInt16(kVK_Function),
+                functionIsDown: flags.contains(.function),
+                chordModifiersAreDown: !flags.intersection([.command, .option, .control, .shift]).isEmpty
+            ))
+            if edge == .released {
                 self.finish(with: .fn, completion: completion)
             }
-            self.fnKeyIsDown = isFnDown
             return event
         }
 
@@ -231,8 +254,14 @@ final class ShortcutRecorder: ObservableObject {
         if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
         keyMonitor = nil
         flagsMonitor = nil
-        fnKeyIsDown = false
+        functionKeyPress = FunctionKeyPress()
         if isRecording { isRecording = false }
+    }
+
+    private func accepts(_ event: NSEvent) -> Bool {
+        guard isRecording else { return false }
+        guard let window else { return true }
+        return (event.window ?? NSApp.keyWindow) === window
     }
 
     private func finish(with shortcut: KeyboardShortcut, completion: @escaping (KeyboardShortcut) -> Void) {

@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CoreGraphics
 import Foundation
 import XCTest
 @testable import BruteApp
@@ -139,13 +140,50 @@ final class PreferencesTests: XCTestCase {
         let window = try XCTUnwrap(preferences.window)
         let recorder = preferences.recorder
         defer { recorder.cancel() }
+        var hotkeyPresses = 0
+        hotkey.onHotkeyDown = { _ in hotkeyPresses += 1 }
         recorder.record { _ in XCTFail("Closing Preferences must not apply a shortcut") }
         XCTAssertTrue(recorder.isRecording)
+        hotkey.handleHotkeyEdge(isDown: true)
+        XCTAssertEqual(hotkeyPresses, 0)
 
         window.close()
 
         XCTAssertFalse(recorder.isRecording)
         XCTAssertTrue(preferences.window === window, "Preferences retains the window for reuse")
+        hotkey.handleHotkeyEdge(isDown: true)
+        hotkey.handleHotkeyEdge(isDown: false)
+        XCTAssertEqual(hotkeyPresses, 1)
+    }
+
+    func testShortcutRecorderAcceptsFunctionReleaseOnlyWithoutAChord() throws {
+        let app = NSApplication.shared
+        let recorder = ShortcutRecorder()
+        defer { recorder.cancel() }
+        var recorded: [KeyboardShortcut] = []
+        recorder.record { recorded.append($0) }
+
+        func send(_ keyCode: Int, type: CGEventType = .flagsChanged, flags: CGEventFlags = []) throws {
+            let raw = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: true))
+            raw.type = type
+            raw.flags = flags
+            app.sendEvent(try XCTUnwrap(NSEvent(cgEvent: raw)))
+        }
+
+        try send(kVK_Function, flags: .maskSecondaryFn)
+        XCTAssertTrue(recorded.isEmpty)
+        try send(kVK_Option, flags: [.maskSecondaryFn, .maskAlternate])
+        try send(kVK_Function, flags: .maskAlternate)
+        try send(kVK_Function, flags: .maskSecondaryFn)
+        try send(kVK_ANSI_K, type: .keyDown, flags: .maskSecondaryFn)
+        try send(kVK_Function)
+        XCTAssertTrue(recorded.isEmpty)
+        XCTAssertTrue(recorder.isRecording)
+
+        try send(kVK_Function, flags: .maskSecondaryFn)
+        try send(kVK_Function)
+        XCTAssertEqual(recorded, [.fn])
+        XCTAssertFalse(recorder.isRecording)
     }
 
     func testPreferencesReflectsLaunchAtLoginRequestFailure() {
