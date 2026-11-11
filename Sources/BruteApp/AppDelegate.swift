@@ -7,12 +7,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        _ = MicrophoneActionController.shared
 
         statusBarController = StatusBarController(
             statusItem: NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength),
             muteController: .shared,
             hotkeyManager: .shared,
-            actionController: .shared,
             launchManager: LaunchAtLoginManager.shared,
             iconPreferences: IconPreferences(defaults: .standard)
         )

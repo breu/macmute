@@ -7,18 +7,15 @@
 <p>For macOS 13 or later. This guide is bundled with Brute and works offline.</p>
 <p>Brute lives in your Mac’s menu bar. Click its microphone icon to see the microphone state, shortcut status, and settings. On launch, Brute reads the current microphone state and may finish a pending change or restore an interrupted hold.</p>
 <p>Choose <strong>Brute Help…</strong> from the menu to open this guide. The menu also offers <strong>Preferences…</strong>, <strong>About Brute</strong>, and <strong>Quit Brute</strong>; microphone changes use the shortcut.</p>
-<h2>Tap or hold</h2>
+<h2>Use the shortcut</h2>
 <p>The default shortcut is <strong>Option–Command–M (⌥⌘M)</strong>.</p>
 <table>
 <tr><th>Gesture</th><th>Starting unmuted</th><th>Starting muted</th></tr>
-<tr><td>Tap and release</td><td>Switches to muted and stays muted</td><td>Switches to unmuted and stays unmuted</td></tr>
-<tr><td>Hold until the delay is reached</td><td>Muted while held</td><td>Unmuted while held</td></tr>
-<tr><td>Release a hold</td><td>Returns to unmuted</td><td>Returns to muted</td></tr>
+<tr><td>Press and hold</td><td>Mutes immediately while held</td><td>Unmutes immediately while held</td></tr>
+<tr><td>Release a single press</td><td>Returns to unmuted</td><td>Returns to muted</td></tr>
+<tr><td>Tap twice quickly</td><td>Stays muted after the second release</td><td>Stays unmuted after the second release</td></tr>
 </table>
-<p>A tap changes the state when you release the shortcut. A hold changes it when the delay is reached and restores the previous state when you release. Two quick taps toggle twice; there is no special double-click action.</p>
-<h2>Adjust the delay</h2>
-<p>Use the <strong>Tap–hold delay</strong> slider in the main menu. Choose <strong>0.2, 0.4, 0.6, 0.8, or 1.0 seconds</strong>. The default is <strong>0.4 seconds</strong>.</p>
-<p>A press shorter than the delay is a tap. A press that reaches the delay is a hold. Your selection is saved; changes apply to the next gesture.</p>
+<p>For a lasting change, press and release the shortcut twice quickly. Brute uses your Mac’s double-click speed to recognize the two taps.</p>
 <h2>Which microphone is controlled?</h2>
 <p>Brute controls your Mac’s <strong>default input device</strong>. Apps using that microphone share its mute state. An app that explicitly selects a different microphone is unaffected.</p>
 <p>For example, if your default input is a USB microphone but a calling app uses your Mac’s built-in microphone, muting the USB microphone will not mute that call. Select the same microphone in your Mac’s sound settings and the calling app.</p>

@@ -28,7 +28,6 @@ final class StatusBarController {
     private let statusItem: NSStatusItem?
     private let muteController: MicMuteController
     private let hotkeyManager: HotkeyManager
-    private let actionController: MicrophoneActionController
     private let launchManager: LaunchAtLoginManaging
     private let iconPreferences: IconPreferences
     private var preferencesWindowController: PreferencesWindowController?
@@ -36,21 +35,17 @@ final class StatusBarController {
     private var iconObservation: AnyCancellable?
     private var microphoneStateLabel: NSTextField?
     private var hotkeyStateLabel: NSTextField?
-    private var delayLabel: NSTextField?
-    private var delayRow: NSView?
 
     init(
         statusItem: NSStatusItem?,
         muteController: MicMuteController,
         hotkeyManager: HotkeyManager,
-        actionController: MicrophoneActionController,
         launchManager: LaunchAtLoginManaging,
         iconPreferences: IconPreferences
     ) {
         self.statusItem = statusItem
         self.muteController = muteController
         self.hotkeyManager = hotkeyManager
-        self.actionController = actionController
         self.launchManager = launchManager
         self.iconPreferences = iconPreferences
         configureMenu()
@@ -96,13 +91,10 @@ final class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
-        for title in [BruteStrings.tapHelp, BruteStrings.holdHelp, BruteStrings.releaseHelp] {
+        for title in [BruteStrings.pressShortcutHelp, BruteStrings.releaseShortcutHelp, BruteStrings.doubleTapShortcutHelp] {
             addInformation(title, to: menu)
         }
 
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(makeDelaySliderItem())
-        updateDelayLabel()
         menu.addItem(NSMenuItem.separator())
 
         let prefsItem = NSMenuItem(title: BruteStrings.preferences, action: #selector(openPreferences), keyEquivalent: ",")
@@ -138,35 +130,6 @@ final class StatusBarController {
         let label = NSTextField(labelWithString: title)
         label.font = .menuFont(ofSize: 0)
         return label
-    }
-
-    private func makeDelaySliderItem() -> NSMenuItem {
-        let item = NSMenuItem()
-        let label = makeLabel("")
-        label.setAccessibilityElement(false) // The slider announces this setting and its value.
-        delayLabel = label
-
-        let slider = NSSlider(
-            value: actionController.holdThreshold,
-            minValue: MicrophoneActionController.minimumDelay,
-            maxValue: MicrophoneActionController.maximumDelay,
-            target: self, action: #selector(changeHoldDelay(_:))
-        )
-        slider.isContinuous = true
-        slider.numberOfTickMarks = 5
-        slider.allowsTickMarkValuesOnly = true
-        slider.setAccessibilityLabel(BruteStrings.delaySliderAccessibilityLabel)
-        slider.toolTip = BruteStrings.delaySliderToolTip
-        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        let content = NSStackView(views: [label, slider])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 4
-        let row = makeMenuRow(content, verticalPadding: 6)
-        slider.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        item.view = row
-        delayRow = row
-        return item
     }
 
     @discardableResult
@@ -205,21 +168,6 @@ final class StatusBarController {
             content.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -verticalPadding)
         ])
         return row
-    }
-
-    @objc private func changeHoldDelay(_ slider: NSSlider) {
-        actionController.setHoldThreshold(slider.doubleValue)
-        updateDelayLabel()
-    }
-
-    private func updateDelayLabel() {
-        delayLabel?.stringValue = String(
-            format: BruteStrings.delaySliderLabelFormat,
-            actionController.holdThreshold
-        )
-        if let delayRow {
-            delayRow.setFrameSize(delayRow.fittingSize)
-        }
     }
 
     @objc private func openPreferences() {

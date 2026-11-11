@@ -8,12 +8,10 @@ Requires macOS 13 or later. The app has no Dock icon or main window; look for th
 
 The default shortcut is **Option–Command–M (⌥⌘M)**.
 
-- **Tap:** release before the selected delay to toggle mute/unmute permanently.
-- **Hold:** reach the selected delay to toggle temporarily; release to restore the previous state.
-- Two quick taps toggle twice. There are no modes or special double-click actions.
-- The main menu’s delay slider offers **0.2, 0.4, 0.6, 0.8, and 1.0 seconds**, defaulting to **0.4**. The selection is saved and applies to the next gesture.
+- **Press and hold.** The microphone switches between muted and unmuted as soon as you press the shortcut. Release it to restore the previous state.
+- **Tap twice quickly.** Press and release the shortcut twice to keep the microphone switched after the second release. Brute uses your Mac’s double-click speed to recognize the two taps.
 
-The menu shows microphone state, hotkey status, gesture help, the delay slider, and shortcuts to Preferences, Brute Help, the privacy policy, and About Brute. The menu follows the system appearance. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires permission in **System Settings → Privacy & Security → Input Monitoring**.
+The menu shows microphone state, hotkey status, gesture help, and shortcuts to Preferences, Brute Help, the privacy policy, and About Brute. The menu follows the system appearance. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires permission in **System Settings → Privacy & Security → Input Monitoring**.
 
 **Brute Help…** opens the bundled [user guide](Resources/BruteHelp.html) offline in the system’s HTML viewer, normally a browser. This HTML file is the single source of user documentation and is included in Xcode builds and shell-built app bundles. Xcode’s generated Swift documentation is developer documentation and is separate from the user guide.
 
@@ -21,11 +19,11 @@ On launch, Brute reads the current microphone state and may finish a pending cha
 
 ## State-change contract
 
-`MicrophoneActionController` classifies taps and holds. `MicMuteController` applies the toggle and keeps hold restoration tied to the original input. The menu changes the delay setting without writing to the microphone.
+`MicrophoneActionController` handles shortcut presses, releases, and double taps. `MicMuteController` applies the toggle and keeps temporary restoration tied to the original input.
 
 `MicMuteController` owns device transfers, pending state changes, and restoration retries. Hardware writes converge on its `applyMute` implementation. It uses a writable native mute property or, where necessary, zeroes input volume and restores the per-device baseline. Readback determines the displayed microphone state. An accepted write whose effect is delayed remains pending for confirmation.
 
-Regression coverage includes the single-write-boundary source contract, tap/hold timing, duplicate events, cancellation, delayed readback, restoration, and device identity handling.
+Regression coverage includes the single-write-boundary source contract, double-tap timing, duplicate events, cancellation, delayed readback, restoration, and device identity handling.
 
 ## Build and run with Xcode
 
@@ -103,6 +101,6 @@ Breu Software LLC does not receive data from the Brute app. Brute has no account
 
 Brute reads and changes the default microphone’s mute or input gain. It does not record, store, or transmit audio. The feedback click is generated on your Mac. Brute uses keyboard events to recognize or configure shortcuts. The optional standalone Fn shortcut requires macOS Input Monitoring. Brute does not keep a keystroke history.
 
-macOS preferences store your shortcut, hold delay, icon setting, and the device identifiers, gain values, and pending changes needed to restore your microphone. These settings persist across launches and are never sent to Breu Software. You can revoke Brute’s permissions in System Settings → Privacy & Security. To remove local settings, first set your microphone to the state you want, then quit Brute and remove its app data from your Mac.
+macOS preferences store your shortcut, icon setting, and the device identifiers, gain values, and pending changes needed to restore your microphone. These settings persist across launches and are never sent to Breu Software. You can revoke Brute’s permissions in System Settings → Privacy & Security. To remove local settings, first set your microphone to the state you want, then quit Brute and remove its app data from your Mac.
 
 If you email us, we use the information you send to respond. You can ask us to delete your support correspondence at [support@breusoftware.com](mailto:support@breusoftware.com).

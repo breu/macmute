@@ -53,7 +53,7 @@ final class StatusBarPresentationTests: XCTestCase {
         hardware.volumes[1] = 0.5
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.isVisible = false
-        let (statusBar, _) = makeStatusBar(hardware: hardware, statusItem: item, iconPreferences: iconPreferences)
+        let statusBar = makeStatusBar(hardware: hardware, statusItem: item, iconPreferences: iconPreferences)
         defer { statusBar.shutdown() }
         let button = try XCTUnwrap(item.button)
 
@@ -77,7 +77,7 @@ final class StatusBarPresentationTests: XCTestCase {
 
     func testMenuStateRowUpdatesWhenAnInputDeviceConnects() throws {
         let hardware = FakeAudioDeviceController(defaultDeviceID: nil)
-        let (statusBar, _) = makeStatusBar(hardware: hardware)
+        let statusBar = makeStatusBar(hardware: hardware)
         defer { statusBar.shutdown() }
         let stateRow = try XCTUnwrap(statusBar.menu.items.first?.view)
         XCTAssertEqual(stateRow.accessibilityRole(), .staticText)
@@ -92,24 +92,19 @@ final class StatusBarPresentationTests: XCTestCase {
         XCTAssertGreaterThan(stateRow.frame.width, 0)
     }
 
-    func testMenuSliderUpdatesFutureGesturesWithoutWritingMicrophoneState() throws {
+    func testMenuDescribesShortcutGesturesWithoutWritingMicrophoneState() {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.volumes[1] = 0.5
-        let (statusBar, actions) = makeStatusBar(hardware: hardware)
+        let statusBar = makeStatusBar(hardware: hardware)
         defer { statusBar.shutdown() }
-        let stack = try XCTUnwrap(
-            statusBar.menu.items.compactMap { $0.view?.subviews.first as? NSStackView }.first
-        )
-        let slider = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSSlider }.first)
-        let label = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSTextField }.first)
-        XCTAssertEqual(slider.accessibilityLabel(), "Tap to hold delay in seconds")
-        XCTAssertEqual(slider.doubleValue, 0.4)
 
-        slider.doubleValue = 0.8
-        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
-
-        XCTAssertEqual(actions.holdThreshold, 0.8)
-        XCTAssertTrue(label.stringValue.contains("0.8 seconds"))
+        let helpRows = statusBar.menu.items.compactMap(\.view).dropFirst(2)
+        XCTAssertEqual(helpRows.map { $0.accessibilityLabel() }, [
+            "Press shortcut: switch immediately",
+            "Release: restore previous state",
+            "Tap twice quickly: switch permanently"
+        ])
+        XCTAssertTrue(helpRows.allSatisfy { $0.accessibilityRole() == .staticText })
         XCTAssertTrue(hardware.setMuteCalls.isEmpty)
         XCTAssertTrue(hardware.setVolumeCalls.isEmpty)
     }
@@ -118,7 +113,7 @@ final class StatusBarPresentationTests: XCTestCase {
         hardware: FakeAudioDeviceController,
         statusItem: NSStatusItem? = nil,
         iconPreferences: IconPreferences? = nil
-    ) -> (StatusBarController, MicrophoneActionController) {
+    ) -> StatusBarController {
         _ = NSApplication.shared
         let defaults = UserDefaults(suiteName: "BruteStatusBarTests.\(UUID().uuidString)")!
         let mic = MicMuteController(hardware: hardware, defaults: defaults)
@@ -128,15 +123,12 @@ final class StatusBarPresentationTests: XCTestCase {
             installHandlerOverride: { .success(()) },
             registrationOverride: { _ in .success(()) }
         )
-        let actions = MicrophoneActionController(micController: mic, feedback: nil, observesWake: false)
-        let statusBar = StatusBarController(
+        return StatusBarController(
             statusItem: statusItem,
             muteController: mic,
             hotkeyManager: hotkey,
-            actionController: actions,
             launchManager: LaunchAtLoginManager(),
             iconPreferences: iconPreferences ?? IconPreferences(defaults: defaults)
         )
-        return (statusBar, actions)
     }
 }

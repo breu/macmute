@@ -31,6 +31,7 @@ final class MicMuteController {
     private var acceptedPendingStates: [String: Bool] = [:]
     private var acceptedDeviceRestorations: Set<String> = []
     private var activeTemporaryMute: ActiveTemporaryMute?
+    private var deviceGeneration: UInt64 = 0
     private var knownDeviceIDs: [String: AudioDeviceID] = [:]
     private var cachedDeviceIdentifiers: [AudioDeviceID: String] = [:]
     private var pendingDesiredStateAcrossUnavailableDevice: Bool?
@@ -65,6 +66,7 @@ final class MicMuteController {
 
     struct TemporaryMute: Equatable {
         fileprivate let id = UUID()
+        let deviceGeneration: UInt64
     }
 
     private struct ActiveTemporaryMute {
@@ -124,13 +126,6 @@ final class MicMuteController {
 
     // MARK: - Public surface
 
-    @discardableResult
-    func toggleMute() -> Bool {
-        syncBeforeGesture()
-        guard let prior = logicalMutedValue else { return false }
-        return setMuted(!prior)
-    }
-
     func beginTemporaryToggle() -> TemporaryMute? {
         guard activeTemporaryMute == nil else { return nil }
         syncBeforeGesture()
@@ -138,13 +133,25 @@ final class MicMuteController {
               let deviceID = currentDeviceID,
               let identity = validatedIdentity(for: deviceID, mustRemainDefault: true)
         else { return nil }
+        // A previous release may still need to restore a mute. A new press
+        // can reverse an accepted restoration, but must not replace one the
+        // device is still rejecting with a baseline taken from stale readback.
+        let previousRestoration = pendingDeviceRestorations[identity.key]
+        guard previousRestoration == nil || acceptedDeviceRestorations.contains(identity.key)
+        else { return nil }
 
-        let token = TemporaryMute()
+        let token = TemporaryMute(deviceGeneration: deviceGeneration)
         let forceWrite = pendingState(for: identity.key) != nil
         setDeviceRestoration(
-            DeviceRestoration(muted: prior, preserveOwnership: ownsMute(identity)),
+            DeviceRestoration(
+                muted: prior,
+                preserveOwnership: previousRestoration?.preserveOwnership ?? ownsMute(identity)
+            ),
             for: identity.key
         )
+        // Even when the baseline record is identical, this press supersedes
+        // the prior release's accepted write and needs its own restoration.
+        acceptedDeviceRestorations.remove(identity.key)
         clearPendingDesiredState(forIdentifier: identity.key)
         let accepted = applyMute(!prior, to: identity, forceWrite: forceWrite)
         let sameDevice = identityStillMatches(identity)
@@ -158,6 +165,36 @@ final class MicMuteController {
         }
         publish(actual, writeFailed: !accepted)
         return accepted && sameDevice ? token : nil
+    }
+
+    /// Keep the state of an already accepted temporary write on its original input.
+    /// A delayed write becomes an ordinary pending intent and the menu still shows
+    /// what the hardware reports until it catches up.
+    @discardableResult
+    func commitTemporaryToggle(_ token: TemporaryMute) -> Bool {
+        guard activeTemporaryMute?.token == token else { return false }
+        reconcileCurrentDeviceIfNeeded()
+        guard let active = activeTemporaryMute, active.token == token,
+              let identity = validatedIdentity(for: active.identity.deviceID, mustRemainDefault: true),
+              activeTemporaryMute?.identity.key == identity.key,
+              let restoration = pendingDeviceRestorations[identity.key]
+        else { return false }
+        let actual = readState(on: identity.deviceID)
+        guard identityStillMatches(identity) else { return false }
+
+        let desired = !restoration.muted
+        pendingDesiredStateAcrossUnavailableDevice = nil
+        // Persist the accepted write before dropping its temporary restore record.
+        // If interrupted between the two updates, startup favors the older
+        // restoration, since the promotion has not completed.
+        pendingDesiredStates[identity.key] = desired
+        persistPendingDesiredStates()
+        setDeviceRestoration(nil, for: identity.key)
+        activeTemporaryMute = nil
+        recordAcceptedDesiredState(desired, for: identity.key)
+        confirm(actual, desired: desired, identity: identity)
+        publish(actual, writeFailed: false)
+        return true
     }
 
     @discardableResult
@@ -268,6 +305,7 @@ final class MicMuteController {
     }
 
     private func transitionDefaultDevice(to newDeviceID: AudioDeviceID?) {
+        deviceGeneration &+= 1
         let oldDeviceID = currentDeviceID
         let oldKey = oldDeviceID.map { trackedKey(for: $0) }
         let restoringOriginalDevice = oldKey.flatMap { pendingDeviceRestorations[$0] } != nil

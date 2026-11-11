@@ -224,14 +224,16 @@ final class HotkeyManagerTests: XCTestCase {
         monitor.functionEdge(isDown: true)
         monitor.deliver(.otherKeyDown)
         monitor.functionEdge(isDown: false)
+        XCTAssertEqual(edges, ["down", "cancel"])
         manager.setShortcutRecording(true)
         monitor.functionEdge(isDown: true)
+        XCTAssertEqual(edges, ["down", "cancel", "cancel"])
         manager.setShortcutRecording(false)
         monitor.functionEdge(isDown: false)
         monitor.functionEdge(isDown: true)
         monitor.functionEdge(isDown: false)
 
-        XCTAssertEqual(edges, ["down", "cancel", "down", "up"])
+        XCTAssertEqual(edges, ["down", "cancel", "cancel", "cancel", "down", "up"])
     }
 
     func testMissingReleaseCancelsRatherThanCommittingTap() throws {

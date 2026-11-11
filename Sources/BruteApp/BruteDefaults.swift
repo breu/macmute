@@ -30,6 +30,5 @@ enum BruteDefaults {
     static let pendingInputVolumeRestorations = "MacMute.pendingInputVolumeRestorations"
     static let pendingDeviceRestorations = "MacMute.pendingDeviceRestorations"
     static let shortcut = "MacMute.shortcut"
-    static let tapHoldDelay = "MacMute.tapHoldDelay"
     static let useColoredIcon = "MacMute.useColoredIcon"
 }

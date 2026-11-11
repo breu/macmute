@@ -5,13 +5,9 @@ enum BruteStrings {
     static let microphoneStatePrefix = "Microphone State"
     static let hotkeyPrefix = "Hotkey"
 
-    static let tapHelp = "Tap shortcut: switch mute/unmute permanently"
-    static let holdHelp = "Hold shortcut: switch temporarily"
-    static let releaseHelp = "Release hold: restore previous state"
-
-    static let delaySliderLabelFormat = "Tap–hold delay: %.1f seconds (0.2–1.0)"
-    static let delaySliderAccessibilityLabel = "Tap to hold delay in seconds"
-    static let delaySliderToolTip = "0.2 to 1.0 seconds. Shorter presses toggle permanently."
+    static let pressShortcutHelp = "Press shortcut: switch immediately"
+    static let releaseShortcutHelp = "Release: restore previous state"
+    static let doubleTapShortcutHelp = "Tap twice quickly: switch permanently"
 
     static let preferences = "Preferences…"
     static let help = "Brute Help…"

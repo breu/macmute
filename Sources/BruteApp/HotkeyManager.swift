@@ -228,11 +228,11 @@ final class HotkeyManager {
         Task { @MainActor [systemRegistration] in systemRegistration.shutdown() }
     }
 
-    /// Cancel the active press and remove native callbacks before termination.
+    /// Cancel the gesture and remove native callbacks before termination.
     func shutdown() {
         guard !isShutDown else { return }
         isShutDown = true
-        cancelActivePress()
+        cancelGesture()
         registrationRetryTask?.cancel()
         registrationRetryTask = nil
         stopMonitorHealthChecks()
@@ -269,7 +269,7 @@ final class HotkeyManager {
 
         switch makeRegistration(for: shortcut) {
         case .success(let replacement):
-            cancelActivePress()
+            discardInput()
             unregisterShortcut()
             currentShortcut = shortcut
             activate(replacement)
@@ -439,7 +439,7 @@ final class HotkeyManager {
         switch functionKeyPress.consume(event) {
         case .pressed: handleHotkeyEdge(isDown: true, timestamp: timestamp)
         case .released: handleHotkeyEdge(isDown: false, timestamp: timestamp)
-        case .cancelled: cancelActivePress()
+        case .cancelled: cancelGesture()
         case nil: break
         }
     }
@@ -454,7 +454,7 @@ final class HotkeyManager {
     }
 
     private func loseFunctionKeyMonitor(_ error: HotkeyRegistrationError) {
-        cancelActivePress()
+        discardInput()
         unregisterShortcut()
         recordRegistrationError(error, registrationChanged: true)
         scheduleRegistrationRetry()
@@ -543,13 +543,13 @@ final class HotkeyManager {
     private func discardInput() {
         ignorePressesBefore = ProcessInfo.processInfo.systemUptime
         functionKeyPress = FunctionKeyPress()
-        cancelActivePress()
+        cancelGesture()
     }
 
-    private func cancelActivePress() {
+    private func cancelGesture() {
         stopPressWatchdog()
-        guard hotkeyIsDown else { return }
         hotkeyIsDown = false
+        // An already released press can still be waiting for the second tap.
         onHotkeyCancelled?()
     }
 
