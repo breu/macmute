@@ -28,6 +28,7 @@ final class StatusBarController {
     private let statusItem: NSStatusItem?
     private let muteController: MicMuteController
     private let hotkeyManager: HotkeyManager
+    private let actionController: MicrophoneActionController
     private let launchManager: LaunchAtLoginManaging
     private let iconPreferences: IconPreferences
     private var preferencesWindowController: PreferencesWindowController?
@@ -35,17 +36,21 @@ final class StatusBarController {
     private var iconObservation: AnyCancellable?
     private var microphoneStateLabel: NSTextField?
     private var hotkeyStateLabel: NSTextField?
+    private var doublePressWindowLabel: NSTextField?
+    private var doublePressWindowRow: NSView?
 
     init(
         statusItem: NSStatusItem?,
         muteController: MicMuteController,
         hotkeyManager: HotkeyManager,
+        actionController: MicrophoneActionController,
         launchManager: LaunchAtLoginManaging,
         iconPreferences: IconPreferences
     ) {
         self.statusItem = statusItem
         self.muteController = muteController
         self.hotkeyManager = hotkeyManager
+        self.actionController = actionController
         self.launchManager = launchManager
         self.iconPreferences = iconPreferences
         configureMenu()
@@ -96,6 +101,8 @@ final class StatusBarController {
         }
 
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(makeDoublePressWindowItem())
+        menu.addItem(NSMenuItem.separator())
 
         let prefsItem = NSMenuItem(title: BruteStrings.preferences, action: #selector(openPreferences), keyEquivalent: ",")
         prefsItem.target = self
@@ -130,6 +137,51 @@ final class StatusBarController {
         let label = NSTextField(labelWithString: title)
         label.font = .menuFont(ofSize: 0)
         return label
+    }
+
+    private func makeDoublePressWindowItem() -> NSMenuItem {
+        let item = NSMenuItem()
+        let label = makeLabel(doublePressWindowTitle)
+        label.setAccessibilityElement(false) // The slider announces the setting and its value.
+        doublePressWindowLabel = label
+
+        let slider = NSSlider(
+            value: actionController.doublePressInterval,
+            minValue: MicrophoneActionController.minimumDoublePressInterval,
+            maxValue: MicrophoneActionController.maximumDoublePressInterval,
+            target: self, action: #selector(changeDoublePressWindow(_:))
+        )
+        slider.isContinuous = true
+        slider.numberOfTickMarks = 5
+        slider.allowsTickMarkValuesOnly = true
+        slider.setAccessibilityLabel(BruteStrings.doublePressWindowAccessibilityLabel)
+        slider.setAccessibilityHelp(BruteStrings.doublePressWindowHelp)
+        slider.toolTip = BruteStrings.doublePressWindowHelp
+        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+
+        let content = NSStackView(views: [label, slider])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = 4
+        let row = makeMenuRow(content, verticalPadding: 6)
+        slider.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+        row.setFrameSize(row.fittingSize)
+        item.view = row
+        doublePressWindowRow = row
+        return item
+    }
+
+    private var doublePressWindowTitle: String {
+        String(format: BruteStrings.doublePressWindowLabelFormat, actionController.doublePressInterval)
+    }
+
+    @objc private func changeDoublePressWindow(_ slider: NSSlider) {
+        actionController.setDoublePressInterval(slider.doubleValue)
+        slider.doubleValue = actionController.doublePressInterval
+        doublePressWindowLabel?.stringValue = doublePressWindowTitle
+        if let row = doublePressWindowRow {
+            row.setFrameSize(row.fittingSize)
+        }
     }
 
     @discardableResult

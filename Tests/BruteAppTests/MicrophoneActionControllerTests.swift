@@ -36,7 +36,7 @@ final class MicrophoneActionControllerTests: XCTestCase {
             XCTAssertEqual(mic.state.mutedValue, prior)
             actions.handleDown(at: 1.25)
             XCTAssertEqual(mic.state.mutedValue, !prior)
-            actions.handleUp(at: 1.625)
+            actions.handleUp(at: 1.125 + actions.doublePressInterval)
             XCTAssertEqual(mic.state.mutedValue, !prior)
             XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [!prior, prior, !prior])
         }
@@ -61,6 +61,55 @@ final class MicrophoneActionControllerTests: XCTestCase {
             XCTAssertEqual(mic.state, .muted)
             XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false, true, false, true], "\(sequence)")
         }
+    }
+
+    func testTimingUsesTheSavedSliderValueAndPersistsChanges() throws {
+        let (_, mic) = makeMicrophone(muted: false)
+        let suiteName = "BruteTimingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(0.8, forKey: "MacMute.tapHoldDelay")
+        let actions = MicrophoneActionController(
+            micController: mic, feedback: nil, observesWake: false, defaults: defaults
+        )
+        XCTAssertEqual(actions.doublePressInterval, 0.8)
+
+        actions.setDoublePressInterval(0.53)
+        XCTAssertEqual(actions.doublePressInterval, 0.6)
+        let reloaded = MicrophoneActionController(
+            micController: mic, feedback: nil, observesWake: false, defaults: defaults
+        )
+        XCTAssertEqual(reloaded.doublePressInterval, 0.6)
+
+        reloaded.setDoublePressInterval(0.1)
+        XCTAssertEqual(reloaded.doublePressInterval, 0.2)
+        reloaded.setDoublePressInterval(2)
+        XCTAssertEqual(reloaded.doublePressInterval, 1.0)
+        reloaded.setDoublePressInterval(.nan)
+        XCTAssertEqual(reloaded.doublePressInterval, 0.4)
+    }
+
+    func testTimingChangeAppliesToTheNextPair() {
+        let (hardware, mic) = makeMicrophone(muted: true)
+        let actions = makeActions(for: mic)
+        actions.setDoublePressInterval(0.8)
+
+        actions.handleDown(at: 1)
+        XCTAssertEqual(mic.state, .unmuted)
+        actions.setDoublePressInterval(0.2)
+        XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false])
+        actions.handleUp(at: 1.5)
+        XCTAssertEqual(mic.state, .muted)
+        actions.handleDown(at: 1.625)
+        actions.handleUp(at: 1.9375)
+        XCTAssertEqual(mic.state, .unmuted)
+
+        actions.handleDown(at: 3)
+        actions.handleUp(at: 3.0625)
+        actions.handleDown(at: 3.25)
+        XCTAssertEqual(mic.state, .muted)
+        actions.handleUp(at: 3.3125)
+        XCTAssertEqual(mic.state, .unmuted)
     }
 
     func testConsecutiveDoublePressesDoNotOverlap() {
@@ -103,7 +152,7 @@ final class MicrophoneActionControllerTests: XCTestCase {
         var time = 1.0
         let actions = MicrophoneActionController(
             micController: mic, hotkeyManager: hotkey, feedback: nil,
-            observesWake: false, doubleClickInterval: 0.5, now: { time }
+            observesWake: false, now: { time }
         )
         try withExtendedLifetime(actions) {
             hotkey.handleHotkeyEdge(isDown: true)
@@ -240,7 +289,7 @@ final class MicrophoneActionControllerTests: XCTestCase {
         // Simulate queued native events so classification must use their original timestamps.
         MicrophoneActionController(
             micController: mic, feedback: nil, observesWake: false,
-            doubleClickInterval: 0.5, now: { 10 }
+            now: { 10 }
         )
     }
 }

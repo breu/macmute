@@ -6,6 +6,7 @@ This document separates completed implementation from checks that still require 
 
 - One microphone gesture controller and user state-write boundary.
 - Immediate temporary toggle on press, restoration on release, and permanent toggle after two quick taps.
+- Saved double-press window from 0.2 to 1.0 seconds in 0.2-second steps, with a 0.4-second default.
 - Menu state and microphone diagnostics, gesture help, system appearance, Preferences/About/Quit actions, and offline Help.
 - Bundled HTML help in both Xcode and shell app builds.
 - Brute app name and existing `com.breu.macmute` bundle identifier in both build paths.
@@ -29,6 +30,7 @@ These are development checks. Repeat the applicable checks against the final dis
 
 - [ ] Run `bash Scripts/check_release.sh` against this candidate.
 - [ ] In both starting states, verify that a press switches immediately, a single release restores the prior state, and two quick taps keep the new state. Check that a long hold and two separated taps each restore the prior state.
+- [ ] At each slider setting, check the limit on time between releases and the duration of each tap. Verify the saved selection survives relaunch.
 - [ ] Verify shortcut registration and changes. Test standalone Fn with Input Monitoring granted and revoked, including release while another app is focused.
 - [ ] Verify state icons/menu text against live microphone behavior, including unavailable and reconnect states.
 - [ ] Verify default-device switching while muted, sleep/wake, feedback sound, and Launch at Login.
@@ -43,7 +45,7 @@ These are development checks. Repeat the applicable checks against the final dis
 - [ ] Validate and upload in Organizer; confirm the app-category and sandbox validation issues are resolved.
 - [ ] Verify the App Store listing name and bundle identifier match the Brute build.
 - [ ] After pushing the policy, open the [public privacy policy](https://github.com/breusoftware/brute#privacy-policy) while signed out and enter that URL and the app privacy answers in App Store Connect.
-- [ ] Refresh the App Store screenshots to show the new shortcut instructions. Export 1440 × 900 images without an alpha channel.
+- [ ] Refresh the App Store screenshots to show the shortcut instructions and the double-press slider. Export 1440 × 900 images without an alpha channel.
 - [ ] Confirm Apple processing, metadata, and review status before describing the app as published.
 
 ## Direct-distribution route

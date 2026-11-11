@@ -53,7 +53,7 @@ final class StatusBarPresentationTests: XCTestCase {
         hardware.volumes[1] = 0.5
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.isVisible = false
-        let statusBar = makeStatusBar(hardware: hardware, statusItem: item, iconPreferences: iconPreferences)
+        let (statusBar, _) = makeStatusBar(hardware: hardware, statusItem: item, iconPreferences: iconPreferences)
         defer { statusBar.shutdown() }
         let button = try XCTUnwrap(item.button)
 
@@ -77,7 +77,7 @@ final class StatusBarPresentationTests: XCTestCase {
 
     func testMenuStateRowUpdatesWhenAnInputDeviceConnects() throws {
         let hardware = FakeAudioDeviceController(defaultDeviceID: nil)
-        let statusBar = makeStatusBar(hardware: hardware)
+        let (statusBar, _) = makeStatusBar(hardware: hardware)
         defer { statusBar.shutdown() }
         let stateRow = try XCTUnwrap(statusBar.menu.items.first?.view)
         XCTAssertEqual(stateRow.accessibilityRole(), .staticText)
@@ -95,16 +95,43 @@ final class StatusBarPresentationTests: XCTestCase {
     func testMenuDescribesShortcutGesturesWithoutWritingMicrophoneState() {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.volumes[1] = 0.5
-        let statusBar = makeStatusBar(hardware: hardware)
+        let (statusBar, _) = makeStatusBar(hardware: hardware)
         defer { statusBar.shutdown() }
 
-        let helpRows = statusBar.menu.items.compactMap(\.view).dropFirst(2)
+        let helpRows = statusBar.menu.items.compactMap(\.view)
+            .filter { $0.accessibilityRole() == .staticText }.dropFirst(2)
         XCTAssertEqual(helpRows.map { $0.accessibilityLabel() }, [
             "Press shortcut: switch immediately",
             "Release: restore previous state",
             "Tap twice quickly: switch permanently"
         ])
-        XCTAssertTrue(helpRows.allSatisfy { $0.accessibilityRole() == .staticText })
+        XCTAssertTrue(hardware.setMuteCalls.isEmpty)
+        XCTAssertTrue(hardware.setVolumeCalls.isEmpty)
+    }
+
+    func testDoublePressWindowSliderUpdatesTimingWithoutWritingMicrophoneState() throws {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.volumes[1] = 0.5
+        let (statusBar, actions) = makeStatusBar(hardware: hardware)
+        defer { statusBar.shutdown() }
+        let stack = try XCTUnwrap(
+            statusBar.menu.items.compactMap { $0.view?.subviews.first as? NSStackView }.first
+        )
+        let slider = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSSlider }.first)
+        let label = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSTextField }.first)
+        XCTAssertEqual(slider.accessibilityLabel(), "Double-press window in seconds")
+        XCTAssertEqual(label.stringValue, "Double-press window: 0.4 seconds")
+        XCTAssertEqual(slider.doubleValue, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(slider.minValue, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(slider.maxValue, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(slider.numberOfTickMarks, 5)
+        XCTAssertTrue(slider.allowsTickMarkValuesOnly)
+
+        slider.doubleValue = 0.8
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+
+        XCTAssertEqual(actions.doublePressInterval, 0.8, accuracy: 0.0001)
+        XCTAssertEqual(label.stringValue, "Double-press window: 0.8 seconds")
         XCTAssertTrue(hardware.setMuteCalls.isEmpty)
         XCTAssertTrue(hardware.setVolumeCalls.isEmpty)
     }
@@ -113,7 +140,7 @@ final class StatusBarPresentationTests: XCTestCase {
         hardware: FakeAudioDeviceController,
         statusItem: NSStatusItem? = nil,
         iconPreferences: IconPreferences? = nil
-    ) -> StatusBarController {
+    ) -> (StatusBarController, MicrophoneActionController) {
         _ = NSApplication.shared
         let defaults = UserDefaults(suiteName: "BruteStatusBarTests.\(UUID().uuidString)")!
         let mic = MicMuteController(hardware: hardware, defaults: defaults)
@@ -123,12 +150,15 @@ final class StatusBarPresentationTests: XCTestCase {
             installHandlerOverride: { .success(()) },
             registrationOverride: { _ in .success(()) }
         )
-        return StatusBarController(
+        let actions = MicrophoneActionController(micController: mic, feedback: nil, observesWake: false)
+        let statusBar = StatusBarController(
             statusItem: statusItem,
             muteController: mic,
             hotkeyManager: hotkey,
+            actionController: actions,
             launchManager: LaunchAtLoginManager(),
             iconPreferences: iconPreferences ?? IconPreferences(defaults: defaults)
         )
+        return (statusBar, actions)
     }
 }

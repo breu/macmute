@@ -30,5 +30,7 @@ enum BruteDefaults {
     static let pendingInputVolumeRestorations = "MacMute.pendingInputVolumeRestorations"
     static let pendingDeviceRestorations = "MacMute.pendingDeviceRestorations"
     static let shortcut = "MacMute.shortcut"
+    // Reuse the timing value saved by the former tap–hold slider.
+    static let doublePressInterval = "MacMute.tapHoldDelay"
     static let useColoredIcon = "MacMute.useColoredIcon"
 }
