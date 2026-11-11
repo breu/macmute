@@ -11,12 +11,14 @@
 <p>The default shortcut is <strong>Option–Command–M (⌥⌘M)</strong>.</p>
 <table>
 <tr><th>Gesture</th><th>Starting unmuted</th><th>Starting muted</th></tr>
-<tr><td>Press and hold</td><td>Mutes immediately while held</td><td>Unmutes immediately while held</td></tr>
-<tr><td>Release a single press</td><td>Returns to unmuted</td><td>Returns to muted</td></tr>
-<tr><td>Tap twice quickly</td><td>Stays muted after the second release</td><td>Stays unmuted after the second release</td></tr>
+<tr><td>Hold for 0.2 seconds</td><td>Mutes while held</td><td>Unmutes while held</td></tr>
+<tr><td>Release a hold</td><td>Returns to unmuted</td><td>Returns to muted</td></tr>
+<tr><td>Tap once</td><td>Stays unmuted</td><td>Stays muted</td></tr>
+<tr><td>Tap twice quickly</td><td>Switches to muted on the second release</td><td>Switches to unmuted on the second release</td></tr>
 </table>
+<p>Each tap is a press and release that lasts less than 0.2 seconds. To switch permanently, release the second tap within the double-press window.</p>
 <h2>Adjust the double-press window</h2>
-<p>Use the menu’s <strong>Double-press window</strong> slider to choose <strong>0.2, 0.4, 0.6, 0.8, or 1.0 seconds</strong>. The default is <strong>0.4 seconds</strong>. The window sets the maximum time between the two releases and the maximum length of each press for it to count as a tap. The saved setting applies from the next first press. Every press switches the microphone immediately.</p>
+<p>Use the menu’s <strong>Double-press window</strong> slider to set the maximum time between releases. Choose <strong>0.2, 0.4, 0.6, 0.8, or 1.0 seconds</strong>. The default is <strong>0.4 seconds</strong>.</p>
 <h2>Which microphone is controlled?</h2>
 <p>Brute controls your Mac’s <strong>default input device</strong>. Apps using that microphone share its mute state. An app that explicitly selects a different microphone is unaffected.</p>
 <p>For example, if your default input is a USB microphone but a calling app uses your Mac’s built-in microphone, muting the USB microphone will not mute that call. Select the same microphone in your Mac’s sound settings and the calling app.</p>
@@ -24,7 +26,7 @@
 <h2>Preferences</h2>
 <p>Open <strong>Preferences…</strong> from the menu to change the shortcut or enable <strong>Launch at Login</strong>. To change the shortcut, click its button and press a key combination with a modifier, or press <strong>fn</strong> alone. The standalone Fn shortcut requires permission in System Settings → Privacy &amp; Security → Input Monitoring. Preferences reports shortcut registration or Launch at Login errors.</p>
 <h2>Check the state</h2>
-<p>The menu bar icon is red when muted and green when unmuted. To use a monochrome icon that follows the system appearance, turn off <strong>Use Colored Icon</strong> in Preferences.</p>
+<p>The menu bar icon shows the microphone’s current state, including temporary changes during a hold. The colored icon is red when muted and green when unmuted. To use a monochrome icon that follows the system appearance, turn off <strong>Use Colored Icon</strong> in Preferences.</p>
 <p>The menu reports whether the microphone is <strong>Muted</strong> or <strong>Unmuted</strong>. It also explains when Brute cannot verify or change the state. If no input device is available, check that your microphone is connected and selected as the default input.</p>
 <p>If the shortcut does not respond, check the menu’s <strong>Hotkey</strong> status and any error in Preferences. If your calling app still hears audio while Brute reports Muted, check which microphone that app uses.</p>
 <p>If macOS asks for microphone access, review Brute’s permission in System Settings → Privacy &amp; Security → Microphone. Brute does not open an audio recording stream.</p>

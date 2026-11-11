@@ -101,9 +101,9 @@ final class StatusBarPresentationTests: XCTestCase {
         let helpRows = statusBar.menu.items.compactMap(\.view)
             .filter { $0.accessibilityRole() == .staticText }.dropFirst(2)
         XCTAssertEqual(helpRows.map { $0.accessibilityLabel() }, [
-            "Press shortcut: switch immediately",
-            "Release: restore previous state",
-            "Tap twice quickly: switch permanently"
+            "Hold for 0.2 seconds to switch temporarily",
+            "Release a hold to restore the previous state",
+            "Tap twice quickly to switch permanently"
         ])
         XCTAssertTrue(hardware.setMuteCalls.isEmpty)
         XCTAssertTrue(hardware.setVolumeCalls.isEmpty)
@@ -119,6 +119,8 @@ final class StatusBarPresentationTests: XCTestCase {
         )
         let slider = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSSlider }.first)
         let label = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSTextField }.first)
+        let row = try XCTUnwrap(stack.superview)
+        let initialSize = row.frame.size
         XCTAssertEqual(slider.accessibilityLabel(), "Double-press window in seconds")
         XCTAssertEqual(label.stringValue, "Double-press window: 0.4 seconds")
         XCTAssertEqual(slider.doubleValue, 0.4, accuracy: 0.0001)
@@ -132,6 +134,10 @@ final class StatusBarPresentationTests: XCTestCase {
 
         XCTAssertEqual(actions.doublePressInterval, 0.8, accuracy: 0.0001)
         XCTAssertEqual(label.stringValue, "Double-press window: 0.8 seconds")
+        slider.doubleValue = 1.0
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        XCTAssertEqual(label.stringValue, "Double-press window: 1.0 seconds")
+        XCTAssertEqual(row.frame.size, initialSize)
         XCTAssertTrue(hardware.setMuteCalls.isEmpty)
         XCTAssertTrue(hardware.setVolumeCalls.isEmpty)
     }

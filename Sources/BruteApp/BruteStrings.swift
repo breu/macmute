@@ -5,12 +5,12 @@ enum BruteStrings {
     static let microphoneStatePrefix = "Microphone State"
     static let hotkeyPrefix = "Hotkey"
 
-    static let pressShortcutHelp = "Press shortcut: switch immediately"
-    static let releaseShortcutHelp = "Release: restore previous state"
-    static let doubleTapShortcutHelp = "Tap twice quickly: switch permanently"
+    static let pressShortcutHelp = "Hold for 0.2 seconds to switch temporarily"
+    static let releaseShortcutHelp = "Release a hold to restore the previous state"
+    static let doubleTapShortcutHelp = "Tap twice quickly to switch permanently"
     static let doublePressWindowLabelFormat = "Double-press window: %.1f seconds"
     static let doublePressWindowAccessibilityLabel = "Double-press window in seconds"
-    static let doublePressWindowHelp = "Sets the time limit for each tap and the time between the two releases."
+    static let doublePressWindowHelp = "Maximum time between the releases of two short taps."
 
     static let preferences = "Preferences…"
     static let help = "Brute Help…"

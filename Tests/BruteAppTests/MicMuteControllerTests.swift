@@ -225,6 +225,7 @@ final class MicMuteControllerTests: XCTestCase {
 
         gestureController.handleDown()
         gestureTime = 0.4
+        gestureController.advanceHold(at: gestureTime)
         hardware.muteWritesSucceed = false
         gestureController.handleUp()
         XCTAssertEqual(micController.state, .unmuted)
@@ -376,6 +377,7 @@ final class MicMuteControllerTests: XCTestCase {
 
         gestureController.handleDown()
         gestureTime = 0.4
+        gestureController.advanceHold(at: gestureTime)
         hardware.defaultDeviceID = nil
         gestureController.handleUp()
         XCTAssertEqual(micController.state, .unavailable)
@@ -424,6 +426,7 @@ final class MicMuteControllerTests: XCTestCase {
 
         gestureController.handleDown()
         gestureTime = 0.4
+        gestureController.advanceHold(at: gestureTime)
         hardware.muteWritesSucceed = false
         gestureController.handleUp()
         hardware.muteWritesSucceed = true
@@ -454,17 +457,16 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .muted)
     }
 
-    func testCommitKeepsTheTemporaryTargetAfterReleaseAndWake() throws {
+    func testPersistentToggleKeepsBothDirectionsThroughWake() {
         for originallyMuted in [false, true] {
             let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
             hardware.muteProperties = [1]
             hardware.mutes[1] = originallyMuted
             let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
-            let token = try XCTUnwrap(controller.beginTemporaryToggle())
+            let generation = controller.shortcutDeviceGeneration()
 
-            XCTAssertTrue(controller.commitTemporaryToggle(token))
+            XCTAssertTrue(controller.toggleMuted(forDeviceGeneration: generation))
             XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [!originallyMuted])
-            XCTAssertFalse(controller.endTemporaryToggle(token))
             controller.prepareForSleep()
             controller.handleWake()
 
@@ -473,7 +475,7 @@ final class MicMuteControllerTests: XCTestCase {
         }
     }
 
-    func testCommitKeepsDeferredGainPendingAcrossRestart() throws {
+    func testPersistentToggleKeepsDeferredGainPendingAcrossRestart() throws {
         let suite = "BruteTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -483,14 +485,12 @@ final class MicMuteControllerTests: XCTestCase {
             let controller = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
             XCTAssertTrue(controller.setMuted(true))
             hardware.deferVolumeWrites = true
-            let token = try XCTUnwrap(controller.beginTemporaryToggle())
             hardware.setVolumeCalls.removeAll()
 
-            XCTAssertTrue(controller.commitTemporaryToggle(token))
-            XCTAssertEqual(hardware.setVolumeCalls, [])
+            XCTAssertTrue(controller.toggleMuted(forDeviceGeneration: controller.shortcutDeviceGeneration()))
+            XCTAssertEqual(hardware.setVolumeCalls.map(\.volume), [0.42])
             XCTAssertEqual(controller.state, .muted)
             XCTAssertTrue(controller.hasOutstandingWork)
-            XCTAssertFalse(controller.endTemporaryToggle(token))
         }
 
         hardware.deferVolumeWrites = false
@@ -502,11 +502,12 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertFalse(restarted.hasOutstandingWork)
     }
 
-    func testSecondTemporaryPressUsesAcceptedRestorationBeforeReadback() throws {
+    func testPersistentToggleUsesAcceptedRestorationBeforeReadback() throws {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.muteProperties = [1]
         hardware.mutes[1] = true
         let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        let generation = controller.shortcutDeviceGeneration()
         let first = try XCTUnwrap(controller.beginTemporaryToggle())
         XCTAssertEqual(hardware.mutes[1], false)
 
@@ -515,10 +516,9 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(hardware.deferredMuteWrites[1], true)
         XCTAssertEqual(controller.state, .unmuted)
 
-        let second = try XCTUnwrap(controller.beginTemporaryToggle())
-        XCTAssertEqual(first.deviceGeneration, second.deviceGeneration)
+        XCTAssertTrue(controller.toggleMuted(forDeviceGeneration: generation))
         XCTAssertEqual(hardware.deferredMuteWrites[1], false)
-        XCTAssertTrue(controller.commitTemporaryToggle(second))
+        XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false, true, false])
         hardware.completeDeferredWrites()
         controller.refreshState()
         XCTAssertEqual(hardware.mutes[1], false)
@@ -536,6 +536,7 @@ final class MicMuteControllerTests: XCTestCase {
         hardware.muteWritesSucceed = false
         XCTAssertFalse(controller.endTemporaryToggle(first))
         XCTAssertNil(controller.beginTemporaryToggle())
+        XCTAssertFalse(controller.toggleMuted(forDeviceGeneration: controller.shortcutDeviceGeneration()))
 
         hardware.muteWritesSucceed = true
         controller.refreshState()
@@ -543,7 +544,7 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .muted)
     }
 
-    func testUncommittedSecondPressRestoresOriginalExternalMute() throws {
+    func testConsecutiveTemporaryHoldsRestoreOriginalExternalMute() throws {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.muteProperties = [1, 2]
         hardware.mutes = [1: true, 2: false]
@@ -568,28 +569,66 @@ final class MicMuteControllerTests: XCTestCase {
         XCTAssertEqual(hardware.mutes[1], true)
     }
 
-    func testCommitRejectsAnInputSwitchAndChangesGenerationOnReturn() throws {
+    func testShortcutRejectsStaleGenerationAfterSwitchReturnAndReplacement() {
         let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
         hardware.muteProperties = [1, 2]
-        hardware.mutes = [1: true, 2: false]
+        hardware.mutes = [1: false, 2: false]
         let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
-        let first = try XCTUnwrap(controller.beginTemporaryToggle())
+        let first = controller.shortcutDeviceGeneration()
         hardware.defaultDeviceID = 2
 
-        XCTAssertFalse(controller.commitTemporaryToggle(first))
-        XCTAssertEqual(hardware.mutes, [1: true, 2: false])
+        XCTAssertNil(controller.beginTemporaryToggle(forDeviceGeneration: first))
+        XCTAssertFalse(controller.toggleMuted(forDeviceGeneration: first))
 
         hardware.defaultDeviceID = 1
-        controller.handleDefaultDeviceChange()
-        let second = try XCTUnwrap(controller.beginTemporaryToggle())
-        XCTAssertNotEqual(first.deviceGeneration, second.deviceGeneration)
-        XCTAssertTrue(controller.endTemporaryToggle(second))
+        let second = controller.shortcutDeviceGeneration()
+        XCTAssertNotEqual(first, second)
+        XCTAssertFalse(controller.toggleMuted(forDeviceGeneration: first))
 
         hardware.persistentIdentifiers[1] = "replacement"
+        XCTAssertFalse(controller.toggleMuted(forDeviceGeneration: second))
+        let third = controller.shortcutDeviceGeneration()
+        XCTAssertNotEqual(second, third)
+        XCTAssertEqual(hardware.setMuteCalls, [])
+        XCTAssertTrue(controller.toggleMuted(forDeviceGeneration: third))
+        XCTAssertEqual(hardware.mutes, [1: true, 2: false])
+    }
+
+    func testRejectedPersistentTogglePreservesThePreviousAcceptedIntent() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties = [1]
+        hardware.mutes[1] = true
+        hardware.deferMuteWrites = true
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        let generation = controller.shortcutDeviceGeneration()
+        XCTAssertTrue(controller.toggleMuted(forDeviceGeneration: generation))
+        XCTAssertEqual(controller.state, .muted)
+
+        hardware.muteWritesSucceed = false
+        XCTAssertFalse(controller.toggleMuted(forDeviceGeneration: generation))
+        hardware.muteWritesSucceed = true
+        XCTAssertTrue(controller.toggleMuted(forDeviceGeneration: generation))
+
+        XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false, true, true])
+        hardware.completeDeferredWrites()
+        controller.refreshState()
+        XCTAssertEqual(controller.state, .muted)
+    }
+
+    func testShortcutUnmuteInterruptedByInputChangeDoesNotUnmuteReplacement() {
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties = [1, 2]
+        hardware.mutes = [1: true, 2: true]
+        let controller = MicMuteController(hardware: hardware, observeSystemChanges: false)
+        let generation = controller.shortcutDeviceGeneration()
+        hardware.onSetMute = { hardware.defaultDeviceID = 2 }
+
+        XCTAssertFalse(controller.toggleMuted(forDeviceGeneration: generation))
         controller.handleDefaultDeviceChange()
-        let third = try XCTUnwrap(controller.beginTemporaryToggle())
-        XCTAssertNotEqual(second.deviceGeneration, third.deviceGeneration)
-        XCTAssertTrue(controller.endTemporaryToggle(third))
+        controller.refreshState()
+
+        XCTAssertEqual(hardware.mutes, [1: false, 2: true])
+        XCTAssertEqual(hardware.setMuteCalls.map(\.deviceID), [1])
     }
 
     func testRestartReissuesRejectedReversalBeforeDelayedUnmuteCanWin() throws {
@@ -1164,6 +1203,7 @@ final class MicMuteControllerTests: XCTestCase {
         )
         gesture.handleDown()
         gestureTime = 0.4
+        gesture.advanceHold(at: gestureTime)
         gesture.handleUp()
         hardware.completeDeferredWrites()
         hardware.deferMuteWrites = false
@@ -1213,6 +1253,7 @@ final class MicMuteControllerTests: XCTestCase {
         )
         gesture.handleDown()
         gestureTime = 0.4
+        gesture.advanceHold(at: gestureTime)
         hardware.muteWritesSucceed = false
         gesture.handleUp()
         controller.refreshState()
@@ -1237,6 +1278,7 @@ final class MicMuteControllerTests: XCTestCase {
         )
         gesture.handleDown()
         gestureTime = 0.4
+        gesture.advanceHold(at: gestureTime)
         gesture.handleUp()
         hardware.completeDeferredWrites()
         hardware.deferVolumeWrites = false

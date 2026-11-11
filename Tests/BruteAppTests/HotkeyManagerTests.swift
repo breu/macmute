@@ -236,6 +236,49 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertEqual(edges, ["down", "cancel", "cancel", "cancel", "down", "up"])
     }
 
+    func testCarbonRepeatCannotTurnOnePhysicalHoldIntoTwoTaps() throws {
+        let suiteName = "BruteTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let input = FakeHotkeyInput()
+        let manager = HotkeyManager(
+            defaults: defaults, observesWake: false, input: input,
+            installHandlerOverride: { .success(()) }, registrationOverride: { _ in .success(()) }
+        )
+        defer { manager.shutdown() }
+        let hardware = FakeAudioDeviceController(defaultDeviceID: 1)
+        hardware.muteProperties = [1]
+        hardware.mutes[1] = true
+        let mic = MicMuteController(hardware: hardware, observeSystemChanges: false, defaults: defaults)
+        let actions = MicrophoneActionController(
+            micController: mic, hotkeyManager: manager, feedback: nil, observesWake: false, now: { 10 }
+        )
+        withExtendedLifetime(actions) {
+            manager.handleCarbonHotkeyEdge(isDown: true, timestamp: 1)
+            manager.handleCarbonHotkeyEdge(isDown: false, timestamp: 1.0625)
+            manager.handleCarbonHotkeyEdge(isDown: true, timestamp: 1.125)
+            manager.handleCarbonHotkeyEdge(isDown: false, timestamp: 1.1875)
+            XCTAssertTrue(hardware.setMuteCalls.isEmpty)
+            actions.advanceHold(at: 1.25)
+            XCTAssertEqual(mic.state, .unmuted)
+            XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false])
+
+            input.keyIsPressed = false
+            manager.handleCarbonHotkeyEdge(isDown: false, timestamp: 2)
+            XCTAssertEqual(mic.state, .muted)
+            XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false, true])
+
+            for time in [3.0, 3.125] {
+                input.keyIsPressed = true
+                manager.handleCarbonHotkeyEdge(isDown: true, timestamp: time)
+                input.keyIsPressed = false
+                manager.handleCarbonHotkeyEdge(isDown: false, timestamp: time + 0.0625)
+            }
+            XCTAssertEqual(mic.state, .unmuted)
+            XCTAssertEqual(hardware.setMuteCalls.map(\.muted), [false, true, false])
+        }
+    }
+
     func testMissingReleaseCancelsRatherThanCommittingTap() throws {
         let suiteName = "BruteTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

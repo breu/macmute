@@ -1,34 +1,36 @@
 import AppKit
 import Foundation
 
-/// A press flips mute immediately. Release restores it unless it completes a double press.
+/// A sustained press changes mute temporarily. Two completed taps toggle it persistently.
 @MainActor
 final class MicrophoneActionController {
     static let shared = MicrophoneActionController(micController: .shared, hotkeyManager: .shared)
 
     static let minimumDoublePressInterval: TimeInterval = 0.2
     static let maximumDoublePressInterval: TimeInterval = 1.0
+    static let holdThreshold: TimeInterval = 0.2
     private static let defaultDoublePressInterval: TimeInterval = 0.4
 
     private struct Tap {
         let releasedAt: TimeInterval
-        let secondReleaseDeadline: TimeInterval
         let deviceGeneration: UInt64
     }
 
     private enum Gesture {
         case idle
-        case pressed(at: TimeInterval, interval: TimeInterval, temporary: MicMuteController.TemporaryMute)
-        case ignored
+        case pressed(at: TimeInterval, deviceGeneration: UInt64, canCountAsTap: Bool)
+        case holding(MicMuteController.TemporaryMute?)
     }
 
     private let micController: MicMuteController
+    private weak var hotkeyManager: HotkeyManager?
     private let feedback: FeedbackPlaying?
     private let defaults: UserDefaults?
     private let now: () -> TimeInterval
     private(set) var doublePressInterval: TimeInterval
     private var gesture: Gesture = .idle
     private var previousTap: Tap?
+    private var holdTask: Task<Void, Never>?
     private var wakeObserver: NotificationObservation?
 
     /// Production wiring. A separate initializer because a default argument cannot
@@ -54,6 +56,7 @@ final class MicrophoneActionController {
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.micController = micController
+        self.hotkeyManager = hotkeyManager
         self.feedback = feedback
         self.defaults = defaults
         self.now = now
@@ -68,10 +71,15 @@ final class MicrophoneActionController {
         }
     }
 
-    /// The first press captures the interval for the pair already in progress.
     func setDoublePressInterval(_ interval: TimeInterval) {
-        doublePressInterval = Self.validatedInterval(interval)
-        defaults?.set(doublePressInterval, forKey: BruteDefaults.doublePressInterval)
+        let updated = Self.validatedInterval(interval)
+        guard updated != doublePressInterval else { return }
+        doublePressInterval = updated
+        defaults?.set(updated, forKey: BruteDefaults.doublePressInterval)
+        previousTap = nil
+        if case .pressed(let pressedAt, let generation, _) = gesture {
+            gesture = .pressed(at: pressedAt, deviceGeneration: generation, canCountAsTap: false)
+        }
     }
 
     private static func validatedInterval(_ interval: TimeInterval) -> TimeInterval {
@@ -83,14 +91,23 @@ final class MicrophoneActionController {
     func handleDown(at timestamp: TimeInterval? = nil) {
         guard case .idle = gesture else { return }
         let pressedAt = eventTime(timestamp)
-        let interval = doublePressInterval
-        guard let temporary = micController.beginTemporaryToggle() else {
-            previousTap = nil
-            gesture = .ignored
-            return
+        gesture = .pressed(at: pressedAt, deviceGeneration: micController.shortcutDeviceGeneration(), canCountAsTap: true)
+        let deadline = ContinuousClock.now + .seconds(max(0, pressedAt + Self.holdThreshold - now()))
+        holdTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
+            guard !Task.isCancelled else { return }
+            self?.advanceHold(at: pressedAt + Self.holdThreshold)
         }
-        gesture = .pressed(at: pressedAt, interval: interval, temporary: temporary)
-        feedback?.play()
+    }
+
+    func advanceHold(at timestamp: TimeInterval) {
+        guard case .pressed(let pressedAt, let generation, _) = gesture,
+              eventTime(timestamp) >= pressedAt + Self.holdThreshold,
+              hotkeyManager?.isTriggerKeyDown != false else { return }
+        previousTap = nil
+        let temporary = micController.beginTemporaryToggle(forDeviceGeneration: generation)
+        gesture = .holding(temporary)
+        if temporary != nil { feedback?.play() }
     }
 
     func handleUp(at timestamp: TimeInterval? = nil) {
@@ -108,28 +125,32 @@ final class MicrophoneActionController {
     }
 
     private func finishPress(at releasedAt: TimeInterval?) {
+        holdTask?.cancel()
+        holdTask = nil
         let finished = gesture
         gesture = .idle
-        guard case .pressed(let pressedAt, let interval, let temporary) = finished else { return }
+        switch finished {
+        case .idle:
+            return
+        case .holding(let temporary):
+            if let temporary, micController.endTemporaryToggle(temporary) { feedback?.play() }
+        case .pressed(let pressedAt, let generation, let canCountAsTap):
+            completeTap(at: releasedAt, pressedAt: pressedAt, deviceGeneration: generation, canCountAsTap: canCountAsTap)
+        }
+    }
+
+    private func completeTap(at releasedAt: TimeInterval?, pressedAt: TimeInterval, deviceGeneration: UInt64, canCountAsTap: Bool) {
         let firstTap = previousTap
         previousTap = nil
-        if let releasedAt, let firstTap,
-           firstTap.deviceGeneration == temporary.deviceGeneration,
-           firstTap.releasedAt <= pressedAt,
-           pressedAt <= releasedAt,
-           releasedAt <= firstTap.secondReleaseDeadline,
-           micController.commitTemporaryToggle(temporary) {
-            return
+        guard canCountAsTap, let releasedAt,
+              pressedAt < releasedAt, releasedAt < pressedAt + Self.holdThreshold,
+              micController.shortcutDeviceGeneration() == deviceGeneration else { return }
+        if let firstTap, firstTap.deviceGeneration == deviceGeneration,
+           firstTap.releasedAt < pressedAt, releasedAt <= firstTap.releasedAt + doublePressInterval {
+            if micController.toggleMuted(forDeviceGeneration: deviceGeneration) { feedback?.play() }
+        } else {
+            previousTap = Tap(releasedAt: releasedAt, deviceGeneration: deviceGeneration)
         }
-        guard micController.endTemporaryToggle(temporary) else { return }
-        if let releasedAt, releasedAt >= pressedAt, releasedAt <= pressedAt + interval {
-            previousTap = Tap(
-                releasedAt: releasedAt,
-                secondReleaseDeadline: releasedAt + interval,
-                deviceGeneration: temporary.deviceGeneration
-            )
-        }
-        feedback?.play()
     }
 
     private func eventTime(_ timestamp: TimeInterval?) -> TimeInterval {

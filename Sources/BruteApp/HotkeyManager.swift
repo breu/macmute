@@ -322,7 +322,7 @@ final class HotkeyManager {
                           receivedID.id == id,
                           receivedID.signature == HotkeyManager.hotKeySignature
                     else { return OSStatus(eventNotHandledErr) }
-                    manager.handleHotkeyEdge(isDown: isDown, timestamp: timestamp)
+                    manager.handleCarbonHotkeyEdge(isDown: isDown, timestamp: timestamp)
                     return noErr
                 }
             },
@@ -470,6 +470,17 @@ final class HotkeyManager {
         guard !isShutDown, !isRecordingShortcut else { return false }
         if let timestamp, let ignorePressesBefore, timestamp < ignorePressesBefore { return false }
         return true
+    }
+
+    func handleCarbonHotkeyEdge(isDown: Bool, timestamp: TimeInterval) {
+        // A shortcut-release notification can arrive while the trigger key is
+        // still held. It cannot complete a tap until that key actually goes up.
+        if !isDown, hotkeyIsDown, input.isPressed(currentShortcut) { return }
+        handleHotkeyEdge(isDown: isDown, timestamp: timestamp)
+    }
+
+    var isTriggerKeyDown: Bool {
+        hotkeyIsDown && input.isPressed(currentShortcut)
     }
 
     func handleHotkeyEdge(isDown: Bool, timestamp: TimeInterval? = nil) {

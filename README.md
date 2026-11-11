@@ -8,12 +8,12 @@ Requires macOS 13 or later. The app has no Dock icon or main window; look for th
 
 The default shortcut is **Option–Command–M (⌥⌘M)**.
 
-- **Press and hold.** The microphone switches between muted and unmuted as soon as you press the shortcut. Release it to restore the previous state.
-- **Tap twice quickly.** Press and release the shortcut twice to keep the microphone switched after the second release.
+- **Hold.** Keep the shortcut down for 0.2 seconds to switch the microphone temporarily. Release it to restore the previous state.
+- **Tap twice.** Press and release the shortcut twice, keeping each press shorter than 0.2 seconds. The microphone switches and stays switched when the second release is within the double-press window.
 
-Use the menu’s **Double-press window** slider to choose **0.2, 0.4, 0.6, 0.8, or 1.0 seconds**. The default is **0.4 seconds**. Both the time between releases and the duration of each press must fit within that window for two taps to keep the new state. The saved setting applies from the next first press. Every press switches the microphone immediately.
+Use the menu’s **Double-press window** slider to set the maximum time between the two releases. Choose **0.2, 0.4, 0.6, 0.8, or 1.0 seconds**. The default is **0.4 seconds**. A single short tap leaves the microphone in its current state.
 
-The menu shows microphone state, hotkey status, gesture help, and shortcuts to Preferences, Brute Help, the privacy policy, and About Brute. The menu follows the system appearance. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires permission in **System Settings → Privacy & Security → Input Monitoring**.
+The menu bar icon shows the microphone’s current state, including temporary changes during a hold. The menu shows microphone state, hotkey status, gesture help, and shortcuts to Preferences, Brute Help, the privacy policy, and About Brute. The menu follows the system appearance. Preferences lets you change the shortcut and enable Launch at Login. The standalone **fn** shortcut requires permission in **System Settings → Privacy & Security → Input Monitoring**.
 
 **Brute Help…** opens the bundled [user guide](Resources/BruteHelp.html) offline in the system’s HTML viewer, normally a browser. This HTML file is the single source of user documentation and is included in Xcode builds and shell-built app bundles. Xcode’s generated Swift documentation is developer documentation and is separate from the user guide.
 

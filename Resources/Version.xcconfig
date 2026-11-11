@@ -1,3 +1,3 @@
 // Version values shared by the Xcode and shell app builds.
-MARKETING_VERSION = 1.3.0
+MARKETING_VERSION = 1.0.0
 CURRENT_PROJECT_VERSION = 1.3.1

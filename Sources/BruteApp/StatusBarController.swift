@@ -37,7 +37,6 @@ final class StatusBarController {
     private var microphoneStateLabel: NSTextField?
     private var hotkeyStateLabel: NSTextField?
     private var doublePressWindowLabel: NSTextField?
-    private var doublePressWindowRow: NSView?
 
     init(
         statusItem: NSStatusItem?,
@@ -167,7 +166,6 @@ final class StatusBarController {
         slider.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
         row.setFrameSize(row.fittingSize)
         item.view = row
-        doublePressWindowRow = row
         return item
     }
 
@@ -177,11 +175,8 @@ final class StatusBarController {
 
     @objc private func changeDoublePressWindow(_ slider: NSSlider) {
         actionController.setDoublePressInterval(slider.doubleValue)
-        slider.doubleValue = actionController.doublePressInterval
+        // AppKit does not support resizing a custom menu item while tracking.
         doublePressWindowLabel?.stringValue = doublePressWindowTitle
-        if let row = doublePressWindowRow {
-            row.setFrameSize(row.fittingSize)
-        }
     }
 
     @discardableResult

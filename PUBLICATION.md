@@ -5,7 +5,7 @@ This document separates completed implementation from checks that still require 
 ## Implemented
 
 - One microphone gesture controller and user state-write boundary.
-- Immediate temporary toggle on press, restoration on release, and permanent toggle after two quick taps.
+- Temporary switch after a 0.2-second hold, restoration on release, and permanent toggle on the second short tap's release.
 - Saved double-press window from 0.2 to 1.0 seconds in 0.2-second steps, with a 0.4-second default.
 - Menu state and microphone diagnostics, gesture help, system appearance, Preferences/About/Quit actions, and offline Help.
 - Bundled HTML help in both Xcode and shell app builds.
@@ -29,8 +29,8 @@ These are development checks. Repeat the applicable checks against the final dis
 ## Before either distribution route
 
 - [ ] Run `bash Scripts/check_release.sh` against this candidate.
-- [ ] In both starting states, verify that a press switches immediately, a single release restores the prior state, and two quick taps keep the new state. Check that a long hold and two separated taps each restore the prior state.
-- [ ] At each slider setting, check the limit on time between releases and the duration of each tap. Verify the saved selection survives relaunch.
+- [ ] In both starting states, verify that one short tap leaves the state unchanged and that two short taps toggle on the second release. Check that a hold switches temporarily after 0.2 seconds and restores on release, including when it follows a tap.
+- [ ] At each slider setting, check the limit on time between the two tap releases. Verify the saved selection survives relaunch.
 - [ ] Verify shortcut registration and changes. Test standalone Fn with Input Monitoring granted and revoked, including release while another app is focused.
 - [ ] Verify state icons/menu text against live microphone behavior, including unavailable and reconnect states.
 - [ ] Verify default-device switching while muted, sleep/wake, feedback sound, and Launch at Login.
