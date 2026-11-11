@@ -7,37 +7,37 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        A0B1C2D3E4F5061728394051 /* BruteHelp.html in Resources */ = {isa = PBXBuildFile; fileRef = A0B1C2D3E4F5061728394050; };
-		B5F3CC9281B1D0CC6A7884E8 /* BrutePrivacy.html in Resources */ = {isa = PBXBuildFile; fileRef = B8E1BD40270D7821BE59A61C; };
 		0978A5A4F85C7361893A41E5 /* Sources/BruteApp/MicMuteController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */; };
+		155EF6A6EA5F5B289F1A3469 /* Sources/BruteApp/CoreAudioDeviceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306D352AB84451578A1A49A7 /* Sources/BruteApp/CoreAudioDeviceController.swift */; };
+		41BA9AF7B12157599DFF37F1 /* Sources/BruteApp/BruteDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F71F458CA4523E8BF0F519 /* Sources/BruteApp/BruteDefaults.swift */; };
 		54C0D2410748EE4E54C3F0CD /* Sources/BruteApp/AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */; };
 		5A4EC18E4951F47942EBD308 /* Sources/BruteApp/ClickSoundPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */; };
 		63AB3ED8DD3C16412B50765E /* Sources/BruteApp/HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */; };
-		C041931BF6DAA5E7839C658C /* Sources/BruteApp/IconPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */; };
-		904911EEB4D9B411D4FBB81F /* Sources/BruteApp/FunctionKeyMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F45117D06315E70B7D2A23 /* Sources/BruteApp/FunctionKeyMonitoring.swift */; };
 		67283661A259879923BCB7CD /* Sources/BruteApp/MicrophoneActionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 973BD5A2305BDA82AA192E4A /* Sources/BruteApp/MicrophoneActionController.swift */; };
-		41BA9AF7B12157599DFF37F1 /* Sources/BruteApp/BruteDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F71F458CA4523E8BF0F519 /* Sources/BruteApp/BruteDefaults.swift */; };
-		9C28508BE545574DB4E59BB4 /* Sources/BruteApp/BruteLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10160940D4FB57B1B6544EA1 /* Sources/BruteApp/BruteLog.swift */; };
-		9126E03E8CAA5FF1AA6DB8AD /* Sources/BruteApp/BruteStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6346B1CD2933583D81D7DA95 /* Sources/BruteApp/BruteStrings.swift */; };
-		F2869FB1F35F5F96A8134DEE /* Sources/BruteApp/MicrophoneState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824DFCCFC216527E96647D80 /* Sources/BruteApp/MicrophoneState.swift */; };
-		D08D8CDE54E159A988F38380 /* Sources/BruteApp/AudioControlPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F915DCBC775CB8B5A45BAE /* Sources/BruteApp/AudioControlPolicy.swift */; };
-		155EF6A6EA5F5B289F1A3469 /* Sources/BruteApp/CoreAudioDeviceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306D352AB84451578A1A49A7 /* Sources/BruteApp/CoreAudioDeviceController.swift */; };
 		68CB5C07DAB2DB2C7B51D3CB /* Tests/BruteAppTests/MicMuteControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632A0C32EBC2CD51D84FF342 /* Tests/BruteAppTests/MicMuteControllerTests.swift */; };
 		74C2431FE30C4A47C8443B80 /* Resources/RaptorIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */; };
-		AFAB677187F67732C8CC4A38 /* Sources/BruteApp/BruteApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */; };
-		C0BC9BAA7CB650194C07BF2F /* Sources/BruteApp/PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874924BE6C9B0F6855C1D63C /* Sources/BruteApp/PreferencesWindow.swift */; };
-		CC070515EB886D43CB13D9D4 /* Tests/BruteAppTests/ReleaseScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15B676969A5E7D9E12E652A /* Tests/BruteAppTests/ReleaseScriptTests.swift */; };
-		D90F8BD9B78B4D88B46E0D1D /* Sources/BruteApp/StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */; };
-		FF00A107DDE7181CA7E31724 /* Sources/BruteApp/LaunchAtLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */; };
-		C6A0AA059D0B4B41428BC91B /* Tests/BruteAppTests/AudioControlPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D7B544FFC34E87DBCC15F9A /* Tests/BruteAppTests/AudioControlPolicyTests.swift */; };
-		E5A428A89441CDA7FF285DA4 /* Tests/BruteAppTests/ClickSoundPlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8C38491F7A072CC53B07E /* Tests/BruteAppTests/ClickSoundPlayerTests.swift */; };
-		9AFAC241F720F6936B84CAB3 /* Tests/BruteAppTests/HotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D46038DAA329DE32786CA70C /* Tests/BruteAppTests/HotkeyManagerTests.swift */; };
-		BA3ED0C3499185EC4AD6F4F0 /* Tests/BruteAppTests/MicrophoneActionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F193A0DB147F0D510D81C4F /* Tests/BruteAppTests/MicrophoneActionControllerTests.swift */; };
-		C53C564B0464CEAC67D56AF3 /* Tests/BruteAppTests/PreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58996A29F0BD7008022EA74E /* Tests/BruteAppTests/PreferencesTests.swift */; };
-		DB20A90940BDAD3023B11E7E /* Tests/BruteAppTests/StatusBarPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1A172C11AF6F1B4DC3B688 /* Tests/BruteAppTests/StatusBarPresentationTests.swift */; };
+		904911EEB4D9B411D4FBB81F /* Sources/BruteApp/FunctionKeyMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F45117D06315E70B7D2A23 /* Sources/BruteApp/FunctionKeyMonitoring.swift */; };
+		9126E03E8CAA5FF1AA6DB8AD /* Sources/BruteApp/BruteStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6346B1CD2933583D81D7DA95 /* Sources/BruteApp/BruteStrings.swift */; };
 		93ABCB1AA0D2927842EDB00E /* Tests/BruteAppTests/TestAudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553696DDD4F6C4B764DC84BC /* Tests/BruteAppTests/TestAudioDevice.swift */; };
+		9AFAC241F720F6936B84CAB3 /* Tests/BruteAppTests/HotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D46038DAA329DE32786CA70C /* Tests/BruteAppTests/HotkeyManagerTests.swift */; };
+		9C28508BE545574DB4E59BB4 /* Sources/BruteApp/BruteLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10160940D4FB57B1B6544EA1 /* Sources/BruteApp/BruteLog.swift */; };
+		A0B1C2D3E4F5061728394051 /* Resources/BruteHelp.html in Resources */ = {isa = PBXBuildFile; fileRef = A0B1C2D3E4F5061728394050 /* Resources/BruteHelp.html */; };
+		AFAB677187F67732C8CC4A38 /* Sources/BruteApp/BruteApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */; };
+		B5F3CC9281B1D0CC6A7884E8 /* Resources/BrutePrivacy.html in Resources */ = {isa = PBXBuildFile; fileRef = B8E1BD40270D7821BE59A61C /* Resources/BrutePrivacy.html */; };
+		BA3ED0C3499185EC4AD6F4F0 /* Tests/BruteAppTests/MicrophoneActionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F193A0DB147F0D510D81C4F /* Tests/BruteAppTests/MicrophoneActionControllerTests.swift */; };
+		C041931BF6DAA5E7839C658C /* Sources/BruteApp/IconPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */; };
+		C0BC9BAA7CB650194C07BF2F /* Sources/BruteApp/PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874924BE6C9B0F6855C1D63C /* Sources/BruteApp/PreferencesWindow.swift */; };
+		C53C564B0464CEAC67D56AF3 /* Tests/BruteAppTests/PreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58996A29F0BD7008022EA74E /* Tests/BruteAppTests/PreferencesTests.swift */; };
+		C6A0AA059D0B4B41428BC91B /* Tests/BruteAppTests/AudioControlPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D7B544FFC34E87DBCC15F9A /* Tests/BruteAppTests/AudioControlPolicyTests.swift */; };
+		CC070515EB886D43CB13D9D4 /* Tests/BruteAppTests/ReleaseScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15B676969A5E7D9E12E652A /* Tests/BruteAppTests/ReleaseScriptTests.swift */; };
+		D08D8CDE54E159A988F38380 /* Sources/BruteApp/AudioControlPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F915DCBC775CB8B5A45BAE /* Sources/BruteApp/AudioControlPolicy.swift */; };
+		D90F8BD9B78B4D88B46E0D1D /* Sources/BruteApp/StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */; };
+		DB20A90940BDAD3023B11E7E /* Tests/BruteAppTests/StatusBarPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1A172C11AF6F1B4DC3B688 /* Tests/BruteAppTests/StatusBarPresentationTests.swift */; };
+		E5A428A89441CDA7FF285DA4 /* Tests/BruteAppTests/ClickSoundPlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8C38491F7A072CC53B07E /* Tests/BruteAppTests/ClickSoundPlayerTests.swift */; };
 		EAE35D12BF888B53EAC7EB92 /* Sources/BruteApp/NotificationObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AFEF158EBEC318AEE4E3EBF /* Sources/BruteApp/NotificationObservation.swift */; };
+		F2869FB1F35F5F96A8134DEE /* Sources/BruteApp/MicrophoneState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824DFCCFC216527E96647D80 /* Sources/BruteApp/MicrophoneState.swift */; };
 		FEB82C46DCC3056F9F5947B5 /* Tests/BruteAppTests/HotkeyRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3FA71E34CE1D332E526A4CE /* Tests/BruteAppTests/HotkeyRetryTests.swift */; };
+		FF00A107DDE7181CA7E31724 /* Sources/BruteApp/LaunchAtLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,41 +51,41 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-        A0B1C2D3E4F5061728394050 /* BruteHelp.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Resources/BruteHelp.html; sourceTree = SOURCE_ROOT; };
-		B8E1BD40270D7821BE59A61C /* BrutePrivacy.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Resources/BrutePrivacy.html; sourceTree = SOURCE_ROOT; };
+		10160940D4FB57B1B6544EA1 /* Sources/BruteApp/BruteLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteLog.swift; sourceTree = SOURCE_ROOT; };
+		1DB8C38491F7A072CC53B07E /* Tests/BruteAppTests/ClickSoundPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/ClickSoundPlayerTests.swift; sourceTree = SOURCE_ROOT; };
+		2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/IconPreferences.swift; sourceTree = SOURCE_ROOT; };
+		306D352AB84451578A1A49A7 /* Sources/BruteApp/CoreAudioDeviceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/CoreAudioDeviceController.swift; sourceTree = SOURCE_ROOT; };
+		4E0592A3E78A1DC052C651A0 /* Resources/Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Resources/Version.xcconfig; sourceTree = SOURCE_ROOT; };
+		553696DDD4F6C4B764DC84BC /* Tests/BruteAppTests/TestAudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/TestAudioDevice.swift; sourceTree = SOURCE_ROOT; };
+		58996A29F0BD7008022EA74E /* Tests/BruteAppTests/PreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/PreferencesTests.swift; sourceTree = SOURCE_ROOT; };
 		59BD0A3FF43B32849B319E64 /* Resources/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = SOURCE_ROOT; };
+		5F193A0DB147F0D510D81C4F /* Tests/BruteAppTests/MicrophoneActionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/MicrophoneActionControllerTests.swift; sourceTree = SOURCE_ROOT; };
 		632A0C32EBC2CD51D84FF342 /* Tests/BruteAppTests/MicMuteControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/MicMuteControllerTests.swift; sourceTree = SOURCE_ROOT; };
+		6346B1CD2933583D81D7DA95 /* Sources/BruteApp/BruteStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteStrings.swift; sourceTree = SOURCE_ROOT; };
 		711E0CD81FA22FA279410FCF /* Sources/BruteApp/LaunchAtLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/LaunchAtLoginManager.swift; sourceTree = SOURCE_ROOT; };
+		7D7B544FFC34E87DBCC15F9A /* Tests/BruteAppTests/AudioControlPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/AudioControlPolicyTests.swift; sourceTree = SOURCE_ROOT; };
+		824DFCCFC216527E96647D80 /* Sources/BruteApp/MicrophoneState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicrophoneState.swift; sourceTree = SOURCE_ROOT; };
 		874924BE6C9B0F6855C1D63C /* Sources/BruteApp/PreferencesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/PreferencesWindow.swift; sourceTree = SOURCE_ROOT; };
 		8BCD5BC4CDFDF0918087C782 /* Brute.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Brute.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		973BD5A2305BDA82AA192E4A /* Sources/BruteApp/MicrophoneActionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicrophoneActionController.swift; sourceTree = SOURCE_ROOT; };
-		D5F71F458CA4523E8BF0F519 /* Sources/BruteApp/BruteDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteDefaults.swift; sourceTree = SOURCE_ROOT; };
-		10160940D4FB57B1B6544EA1 /* Sources/BruteApp/BruteLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteLog.swift; sourceTree = SOURCE_ROOT; };
-		6346B1CD2933583D81D7DA95 /* Sources/BruteApp/BruteStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteStrings.swift; sourceTree = SOURCE_ROOT; };
-		824DFCCFC216527E96647D80 /* Sources/BruteApp/MicrophoneState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicrophoneState.swift; sourceTree = SOURCE_ROOT; };
-		A2F915DCBC775CB8B5A45BAE /* Sources/BruteApp/AudioControlPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/AudioControlPolicy.swift; sourceTree = SOURCE_ROOT; };
-		306D352AB84451578A1A49A7 /* Sources/BruteApp/CoreAudioDeviceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/CoreAudioDeviceController.swift; sourceTree = SOURCE_ROOT; };
 		9834A51247CBE7FF93B60A7F /* Sources/BruteApp/AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/AppDelegate.swift; sourceTree = SOURCE_ROOT; };
+		9AFEF158EBEC318AEE4E3EBF /* Sources/BruteApp/NotificationObservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/NotificationObservation.swift; sourceTree = SOURCE_ROOT; };
+		A0B1C2D3E4F5061728394050 /* Resources/BruteHelp.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Resources/BruteHelp.html; sourceTree = SOURCE_ROOT; };
 		A15B676969A5E7D9E12E652A /* Tests/BruteAppTests/ReleaseScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/ReleaseScriptTests.swift; sourceTree = SOURCE_ROOT; };
+		A2F915DCBC775CB8B5A45BAE /* Sources/BruteApp/AudioControlPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/AudioControlPolicy.swift; sourceTree = SOURCE_ROOT; };
 		AADD5C23026C0D59AE6B6C81 /* Sources/BruteApp/BruteApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteApplication.swift; sourceTree = SOURCE_ROOT; };
 		ABCE670E24B70CFE507AFAE8 /* Sources/BruteApp/StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/StatusBarController.swift; sourceTree = SOURCE_ROOT; };
+		B3FA71E34CE1D332E526A4CE /* Tests/BruteAppTests/HotkeyRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/HotkeyRetryTests.swift; sourceTree = SOURCE_ROOT; };
+		B8E1BD40270D7821BE59A61C /* Resources/BrutePrivacy.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Resources/BrutePrivacy.html; sourceTree = SOURCE_ROOT; };
+		CD1A172C11AF6F1B4DC3B688 /* Tests/BruteAppTests/StatusBarPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/StatusBarPresentationTests.swift; sourceTree = SOURCE_ROOT; };
+		D1F45117D06315E70B7D2A23 /* Sources/BruteApp/FunctionKeyMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/FunctionKeyMonitoring.swift; sourceTree = SOURCE_ROOT; };
+		D46038DAA329DE32786CA70C /* Tests/BruteAppTests/HotkeyManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/HotkeyManagerTests.swift; sourceTree = SOURCE_ROOT; };
+		D5F71F458CA4523E8BF0F519 /* Sources/BruteApp/BruteDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/BruteDefaults.swift; sourceTree = SOURCE_ROOT; };
 		D64839B49AB397A5C3A35C7B /* Sources/BruteApp/ClickSoundPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/ClickSoundPlayer.swift; sourceTree = SOURCE_ROOT; };
 		EF4A51C7D6B8CDC9CA52D327 /* Sources/BruteApp/HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/HotkeyManager.swift; sourceTree = SOURCE_ROOT; };
-		2E02D67DBD905161838E451F /* Sources/BruteApp/IconPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/IconPreferences.swift; sourceTree = SOURCE_ROOT; };
-		D1F45117D06315E70B7D2A23 /* Sources/BruteApp/FunctionKeyMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/FunctionKeyMonitoring.swift; sourceTree = SOURCE_ROOT; };
 		F219C0274590DA45E4BEF1EA /* BruteAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = BruteAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Resources/RaptorIcon.png; sourceTree = SOURCE_ROOT; };
 		FC4165FACED749201B1DF3D6 /* Sources/BruteApp/MicMuteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/MicMuteController.swift; sourceTree = SOURCE_ROOT; };
-		7D7B544FFC34E87DBCC15F9A /* Tests/BruteAppTests/AudioControlPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/AudioControlPolicyTests.swift; sourceTree = SOURCE_ROOT; };
-		1DB8C38491F7A072CC53B07E /* Tests/BruteAppTests/ClickSoundPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/ClickSoundPlayerTests.swift; sourceTree = SOURCE_ROOT; };
-		D46038DAA329DE32786CA70C /* Tests/BruteAppTests/HotkeyManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/HotkeyManagerTests.swift; sourceTree = SOURCE_ROOT; };
-		5F193A0DB147F0D510D81C4F /* Tests/BruteAppTests/MicrophoneActionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/MicrophoneActionControllerTests.swift; sourceTree = SOURCE_ROOT; };
-		58996A29F0BD7008022EA74E /* Tests/BruteAppTests/PreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/PreferencesTests.swift; sourceTree = SOURCE_ROOT; };
-		CD1A172C11AF6F1B4DC3B688 /* Tests/BruteAppTests/StatusBarPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/StatusBarPresentationTests.swift; sourceTree = SOURCE_ROOT; };
-		553696DDD4F6C4B764DC84BC /* Tests/BruteAppTests/TestAudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/TestAudioDevice.swift; sourceTree = SOURCE_ROOT; };
-		9AFEF158EBEC318AEE4E3EBF /* Sources/BruteApp/NotificationObservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BruteApp/NotificationObservation.swift; sourceTree = SOURCE_ROOT; };
-		4E0592A3E78A1DC052C651A0 /* Resources/Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Resources/Version.xcconfig; sourceTree = SOURCE_ROOT; };
-		B3FA71E34CE1D332E526A4CE /* Tests/BruteAppTests/HotkeyRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/BruteAppTests/HotkeyRetryTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,10 +109,10 @@
 		0189424A5A60FED329FA868E /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				A0B1C2D3E4F5061728394050 /* BruteHelp.html */,
-				B8E1BD40270D7821BE59A61C /* BrutePrivacy.html */,
+				A0B1C2D3E4F5061728394050 /* Resources/BruteHelp.html */,
+				B8E1BD40270D7821BE59A61C /* Resources/BrutePrivacy.html */,
 				4E0592A3E78A1DC052C651A0 /* Resources/Version.xcconfig */,
-                59BD0A3FF43B32849B319E64 /* Resources/Info.plist */,
+				59BD0A3FF43B32849B319E64 /* Resources/Info.plist */,
 				F8995BA5891B07E328C60D6B /* Resources/RaptorIcon.png */,
 			);
 			name = Resources;
@@ -224,7 +224,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2700;
+				LastUpgradeCheck = 2720;
 			};
 			buildConfigurationList = 862894B703A6DEDF96A9DD6C /* Build configuration list for PBXProject "Brute" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -250,9 +250,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A0B1C2D3E4F5061728394051 /* BruteHelp.html in Resources */,
-				B5F3CC9281B1D0CC6A7884E8 /* BrutePrivacy.html in Resources */,
-                74C2431FE30C4A47C8443B80 /* Resources/RaptorIcon.png in Resources */,
+				A0B1C2D3E4F5061728394051 /* Resources/BruteHelp.html in Resources */,
+				B5F3CC9281B1D0CC6A7884E8 /* Resources/BrutePrivacy.html in Resources */,
+				74C2431FE30C4A47C8443B80 /* Resources/RaptorIcon.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,12 +336,12 @@
 			baseConfigurationReference = 4E0592A3E78A1DC052C651A0 /* Resources/Version.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = Resources/Brute.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_APP_SANDBOX = YES;
-				CODE_SIGN_ENTITLEMENTS = Resources/Brute.entitlements;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -467,12 +467,12 @@
 			baseConfigurationReference = 4E0592A3E78A1DC052C651A0 /* Resources/Version.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = Resources/Brute.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_APP_SANDBOX = YES;
-				CODE_SIGN_ENTITLEMENTS = Resources/Brute.entitlements;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
